@@ -1,13 +1,13 @@
 # Mesa da Equipe
 
-Protótipo de software de gestão operacional orientado a **clientes**, pronto para deploy na Vercel.
+Prototipo de software de gestao operacional orientado a clientes, pronto para deploy na Vercel e preparado para usar Supabase como banco de dados.
 
-A proposta mudou de "gerenciar tarefas soltas" para "gerenciar a situação do cliente". Isso deixa mais natural acompanhar bloqueios como:
+A proposta central e gerenciar a situacao do cliente. Assim fica mais natural acompanhar bloqueios como:
 
 - Segura entrega
-- Não emite nota fiscal
+- Nao emite nota fiscal
 - Solicita limite
-- Pendências comerciais, fiscais, financeiras e logísticas
+- Pendencias comerciais, fiscais, financeiras e logisticas
 
 ## Estrutura
 
@@ -16,16 +16,21 @@ A proposta mudou de "gerenciar tarefas soltas" para "gerenciar a situação do c
 ├── index.html
 ├── package.json
 ├── vercel.json
+├── .env.example
 ├── src/
 │   ├── main.jsx
 │   ├── data.js
-│   └── styles.css
+│   ├── styles.css
+│   ├── lib/supabase.js
+│   └── services/clientRepository.js
+├── supabase/
+│   └── schema.sql
 └── README.md
 ```
 
 ## Rodar localmente
 
-1. Instale as dependências:
+1. Instale as dependencias:
 
 ```bash
 npm install
@@ -37,7 +42,7 @@ npm install
 npm run dev
 ```
 
-3. Abra o endereço mostrado no terminal, normalmente:
+3. Abra o endereco mostrado no terminal, normalmente:
 
 ```
 http://localhost:5173
@@ -55,34 +60,67 @@ A Vercel usa automaticamente:
 - Build command: `npm run build`
 - Output directory: `dist`
 
-Essas configurações também estão em `vercel.json`.
+Essas configuracoes tambem estao em `vercel.json`.
+
+## Banco de dados com Supabase
+
+O projeto ja esta preparado para usar Supabase. Enquanto as variaveis de ambiente nao forem configuradas, o app continua funcionando em modo demonstracao com os dados de `src/data.js`.
+
+### 1. Criar projeto no Supabase
+
+1. Acesse https://supabase.com
+2. Crie um novo projeto
+3. Abra o menu SQL Editor
+4. Copie e rode o arquivo `supabase/schema.sql`
+
+Esse schema cria:
+
+- `profiles`: usuarios e perfil de acesso
+- `clients`: clientes
+- `client_contacts`: contatos do cliente
+- `client_flags`: bloqueios como segura entrega, nao emite nota fiscal e solicita limite
+- `processes`: processos vinculados ao cliente
+- `orders`: pedidos vinculados ao cliente
+- `client_history`: historico do cliente
+
+### 2. Configurar variaveis locais
+
+Crie um arquivo `.env` na raiz do projeto com:
+
+```bash
+VITE_SUPABASE_URL=https://seu-projeto.supabase.co
+VITE_SUPABASE_ANON_KEY=sua-chave-anon-publica
+```
+
+Esses valores ficam em Project Settings > API no Supabase.
+
+### 3. Configurar variaveis na Vercel
+
+Na Vercel:
+
+1. Abra o projeto
+2. Entre em Settings > Environment Variables
+3. Adicione:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+4. Faca um novo deploy
 
 ## Conectar ao GitHub
 
-Depois que o Git estiver inicializado e o primeiro commit existir:
+Depois de alterar o projeto localmente:
 
 ```bash
-git remote add origin https://github.com/SEU-USUARIO/mesa-da-equipe.git
-git branch -M main
-git push -u origin main
+git add .
+git commit -m "Atualiza Mesa da Equipe"
+git push
 ```
 
-Depois:
+A Vercel deve fazer um novo deploy automaticamente apos o push.
 
-1. Entre em https://vercel.com
-2. Clique em **Add New Project**
-3. Importe o repositório do GitHub
-4. Confirme as configurações detectadas
-5. Clique em **Deploy**
+## Proximos passos sugeridos
 
-## Tornar privado ou público
-
-Na Vercel, você pode começar com o projeto privado. Depois, quando quiser compartilhar com a equipe, basta ajustar as permissões/domínio no painel da Vercel.
-
-## Próximos passos sugeridos
-
-- Adicionar cadastro real de clientes
-- Adicionar banco de dados
-- Criar login por perfil: gestora e colaborador
-- Registrar histórico automático por alteração
-- Integrar pedidos/notas/limite com planilhas ou ERP
+- Ativar Supabase Auth para login real
+- Associar cada colaborador a um registro em `profiles`
+- Criar telas de cadastro e edicao de clientes
+- Registrar historico automatico por alteracao
+- Integrar pedidos, notas e limite com planilhas ou ERP

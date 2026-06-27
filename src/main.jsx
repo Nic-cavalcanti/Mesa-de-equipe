@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AlertTriangle, Bell, CalendarDays, CheckCircle2, ChevronDown, CircleDollarSign, ClipboardList, Eye, EyeOff, FileText, Home, Lock, PackageCheck, Search, Send, ShieldAlert, UsersRound, X } from 'lucide-react';
-import { clients, team } from './data.js';
+import { clients as fallbackClients, team } from './data.js';
+import { loadClientsFromDatabase } from './services/clientRepository.js';
 import './styles.css';
 
 const profiles = {
@@ -51,18 +52,37 @@ const flagConfig = {
 
 function App() {
   const [route, setRoute] = useState('clients');
-  const [selectedId, setSelectedId] = useState(clients[0].id);
+  const [dbClients, setDbClients] = useState(null);
+  const [dataSource, setDataSource] = useState('demo');
+  const [dbError, setDbError] = useState(null);
+  const [selectedId, setSelectedId] = useState(fallbackClients[0].id);
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [profileId, setProfileId] = useState('manager');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const profile = profiles[profileId];
-  const selected = clients.find((client) => client.id === selectedId) ?? clients[0];
+  const appClients = dbClients ?? fallbackClients;
+  const selected = appClients.find((client) => client.id === selectedId) ?? appClients[0] ?? fallbackClients[0];
+
+  useEffect(() => {
+    let active = true;
+
+    loadClientsFromDatabase().then((result) => {
+      if (!active) return;
+      if (result.clients) setDbClients(result.clients);
+      setDataSource(result.source);
+      setDbError(result.error);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const allowedClients = useMemo(() => {
-    if (profile.visibleOwners === 'all') return clients;
-    return clients.filter((client) => profile.visibleOwners.includes(client.owner));
-  }, [profile]);
+    if (profile.visibleOwners === 'all') return appClients;
+    return appClients.filter((client) => profile.visibleOwners.includes(client.owner));
+  }, [profile, appClients]);
 
   const visibleClients = useMemo(() => {
     return allowedClients.filter((client) => {
@@ -94,8 +114,8 @@ function App() {
   function changeProfile(id) {
     setProfileId(id);
     const nextProfile = profiles[id];
-    const nextClients = nextProfile.visibleOwners === 'all' ? clients : clients.filter((client) => nextProfile.visibleOwners.includes(client.owner));
-    if (!nextClients.some((client) => client.id === selectedId)) setSelectedId(nextClients[0]?.id ?? clients[0].id);
+    const nextClients = nextProfile.visibleOwners === 'all' ? appClients : appClients.filter((client) => nextProfile.visibleOwners.includes(client.owner));
+    if (!nextClients.some((client) => client.id === selectedId)) setSelectedId(nextClients[0]?.id ?? appClients[0]?.id ?? fallbackClients[0].id);
     setDrawerOpen(false);
   }
 
