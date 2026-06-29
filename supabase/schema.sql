@@ -1,14 +1,38 @@
 -- Mesa da Equipe - modelo inicial Supabase
 -- Rode este arquivo no SQL Editor do Supabase.
+-- Este script pode ser executado mais de uma vez.
 
 create extension if not exists "pgcrypto";
 
-create type app_role as enum ('manager', 'collaborator', 'finance', 'logistics');
-create type client_priority as enum ('Alta', 'Media', 'Baixa');
-create type client_health as enum ('Atencao', 'Estavel', 'Saudavel');
-create type process_status as enum ('Entrada', 'A fazer', 'Em andamento', 'Aguardando', 'Concluido');
-create type order_status as enum ('Em rota', 'Segurar', 'Aguardando limite', 'Nota bloqueada', 'Entregue');
-create type flag_type as enum ('Segura entrega', 'Nao emite nota fiscal', 'Solicita limite');
+do $$ begin
+  create type app_role as enum ('manager', 'collaborator', 'finance', 'logistics');
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type client_priority as enum ('Alta', 'Media', 'Baixa');
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type client_health as enum ('Atencao', 'Estavel', 'Saudavel');
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type process_status as enum ('Entrada', 'A fazer', 'Em andamento', 'Aguardando', 'Concluido');
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type order_status as enum ('Em rota', 'Segurar', 'Aguardando limite', 'Nota bloqueada', 'Entregue');
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type flag_type as enum ('Segura entrega', 'Nao emite nota fiscal', 'Solicita limite');
+exception when duplicate_object then null;
+end $$;
 
 create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -109,19 +133,38 @@ alter table processes enable row level security;
 alter table orders enable row level security;
 alter table client_history enable row level security;
 
-create or replace function current_role()
+create or replace function get_app_user_role()
 returns app_role as $$
   select role from profiles where id = auth.uid();
 $$ language sql security definer stable;
 
+drop policy if exists "profiles can read own profile" on profiles;
+drop policy if exists "managers can read all profiles" on profiles;
+drop policy if exists "profiles can update own profile" on profiles;
+drop policy if exists "managers can manage profiles" on profiles;
+drop policy if exists "clients read by role" on clients;
+drop policy if exists "clients write by manager" on clients;
+drop policy if exists "related contacts read by visible client" on client_contacts;
+drop policy if exists "related flags read by visible client" on client_flags;
+drop policy if exists "related processes read by visible client" on processes;
+drop policy if exists "related orders read by visible client" on orders;
+drop policy if exists "related history read by visible client" on client_history;
+drop policy if exists "operational write by manager finance logistics" on client_flags;
+drop policy if exists "process write by manager or owner" on processes;
+drop policy if exists "orders write by manager finance logistics" on orders;
+drop policy if exists "history insert authenticated" on client_history;
+
 create policy "profiles can read own profile" on profiles for select using (id = auth.uid());
-create policy "managers can read all profiles" on profiles for select using (current_role() = 'manager');
+create policy "managers can read all profiles" on profiles for select using (get_app_user_role() = 'manager');
+create policy "profiles can update own profile" on profiles for update using (id = auth.uid()) with check (id = auth.uid());
+create policy "managers can manage profiles" on profiles for all using (get_app_user_role() = 'manager') with check (get_app_user_role() = 'manager');
 
 create policy "clients read by role" on clients for select using (
-  current_role() in ('manager', 'finance', 'logistics')
+  get_app_user_role() in ('manager', 'finance', 'logistics')
   or owner_profile_id = auth.uid()
 );
-create policy "clients write by manager" on clients for all using (current_role() = 'manager') with check (current_role() = 'manager');
+
+create policy "clients write by manager" on clients for all using (get_app_user_role() = 'manager') with check (get_app_user_role() = 'manager');
 
 create policy "related contacts read by visible client" on client_contacts for select using (exists (select 1 from clients c where c.id = client_id));
 create policy "related flags read by visible client" on client_flags for select using (exists (select 1 from clients c where c.id = client_id));
@@ -129,7 +172,15 @@ create policy "related processes read by visible client" on processes for select
 create policy "related orders read by visible client" on orders for select using (exists (select 1 from clients c where c.id = client_id));
 create policy "related history read by visible client" on client_history for select using (exists (select 1 from clients c where c.id = client_id));
 
-create policy "operational write by manager finance logistics" on client_flags for all using (current_role() in ('manager', 'finance', 'logistics')) with check (current_role() in ('manager', 'finance', 'logistics'));
-create policy "process write by manager or owner" on processes for all using (current_role() = 'manager' or exists (select 1 from clients c where c.id = client_id and c.owner_profile_id = auth.uid())) with check (current_role() = 'manager' or exists (select 1 from clients c where c.id = client_id and c.owner_profile_id = auth.uid()));
-create policy "orders write by manager finance logistics" on orders for all using (current_role() in ('manager', 'finance', 'logistics')) with check (current_role() in ('manager', 'finance', 'logistics'));
+create policy "operational write by manager finance logistics" on client_flags for all using (get_app_user_role() in ('manager', 'finance', 'logistics')) with check (get_app_user_role() in ('manager', 'finance', 'logistics'));
+
+create policy "process write by manager or owner" on processes for all using (
+  get_app_user_role() = 'manager'
+  or exists (select 1 from clients c where c.id = client_id and c.owner_profile_id = auth.uid())
+) with check (
+  get_app_user_role() = 'manager'
+  or exists (select 1 from clients c where c.id = client_id and c.owner_profile_id = auth.uid())
+);
+
+create policy "orders write by manager finance logistics" on orders for all using (get_app_user_role() in ('manager', 'finance', 'logistics')) with check (get_app_user_role() in ('manager', 'finance', 'logistics'));
 create policy "history insert authenticated" on client_history for insert with check (auth.uid() is not null);

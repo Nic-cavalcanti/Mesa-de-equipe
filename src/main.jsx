@@ -2,13 +2,15 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AlertTriangle, Bell, CalendarDays, CheckCircle2, ChevronDown, CircleDollarSign, ClipboardList, Eye, EyeOff, FileText, Home, Lock, PackageCheck, Search, Send, ShieldAlert, UsersRound, X } from 'lucide-react';
 import { clients as fallbackClients, team } from './data.js';
+import { isSupabaseConfigured } from './lib/supabase.js';
+import { getInitialSession, listenToAuthChanges, loadCurrentProfile, signInWithPassword, signOut } from './services/authRepository.js';
 import { loadClientsFromDatabase } from './services/clientRepository.js';
 import './styles.css';
 
-const profiles = {
+const profilePermissions = {
   manager: {
     label: 'Gestora',
-    user: 'Nicole Silva',
+    fallbackUser: 'Nicole Silva',
     note: 'Acesso total',
     visibleOwners: 'all',
     canSeeFinancial: true,
@@ -17,7 +19,7 @@ const profiles = {
   },
   collaborator: {
     label: 'Colaborador',
-    user: 'Duda',
+    fallbackUser: 'Duda',
     note: 'Clientes atribuídos',
     visibleOwners: ['Duda'],
     canSeeFinancial: false,
@@ -26,7 +28,7 @@ const profiles = {
   },
   finance: {
     label: 'Financeiro',
-    user: 'Caio',
+    fallbackUser: 'Caio',
     note: 'Limite e fiscal',
     visibleOwners: 'all',
     canSeeFinancial: true,
@@ -35,7 +37,7 @@ const profiles = {
   },
   logistics: {
     label: 'Logística',
-    user: 'Bia',
+    fallbackUser: 'Bia',
     note: 'Pedidos e entrega',
     visibleOwners: 'all',
     canSeeFinancial: false,
@@ -52,6 +54,10 @@ const flagConfig = {
 
 function App() {
   const [route, setRoute] = useState('clients');
+  const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
+  const [authError, setAuthError] = useState(null);
+  const [currentProfile, setCurrentProfile] = useState(null);
   const [dbClients, setDbClients] = useState(null);
   const [dataSource, setDataSource] = useState('demo');
   const [dbError, setDbError] = useState(null);
@@ -60,11 +66,66 @@ function App() {
   const [query, setQuery] = useState('');
   const [profileId, setProfileId] = useState('manager');
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const profile = profiles[profileId];
+  const realProfileId = currentProfile?.role ?? profileId;
+  const profile = useMemo(() => {
+    const permission = profilePermissions[realProfileId] ?? profilePermissions.collaborator;
+    return {
+      ...permission,
+      user: currentProfile?.full_name ?? permission.fallbackUser,
+      id: realProfileId
+    };
+  }, [currentProfile, realProfileId]);
   const appClients = dbClients ?? fallbackClients;
   const selected = appClients.find((client) => client.id === selectedId) ?? appClients[0] ?? fallbackClients[0];
 
   useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    let active = true;
+
+    getInitialSession()
+      .then((initialSession) => {
+        if (active) setSession(initialSession);
+      })
+      .catch((error) => {
+        if (active) setAuthError(error.message);
+      })
+      .finally(() => {
+        if (active) setAuthLoading(false);
+      });
+
+    const unsubscribe = listenToAuthChanges((nextSession) => {
+      setSession(nextSession);
+      setCurrentProfile(null);
+      setDbClients(null);
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured || !session) return;
+
+    let active = true;
+
+    loadCurrentProfile()
+      .then((loadedProfile) => {
+        if (active) setCurrentProfile(loadedProfile);
+      })
+      .catch((error) => {
+        if (active) setAuthError(error.message);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [session]);
+
+  useEffect(() => {
+    if (isSupabaseConfigured && !session) return;
     let active = true;
 
     loadClientsFromDatabase().then((result) => {
@@ -77,7 +138,7 @@ function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [session]);
 
   const allowedClients = useMemo(() => {
     if (profile.visibleOwners === 'all') return appClients;
@@ -106,6 +167,16 @@ function App() {
     { label: 'Pedidos abertos', value: visibleClients.reduce((sum, client) => sum + client.openOrders, 0), hint: 'em acompanhamento', icon: PackageCheck }
   ];
 
+  if (authLoading) return <AuthShell title="Carregando acesso" text="Conferindo sua sessao com seguranca..." />;
+
+  if (isSupabaseConfigured && !session) {
+    return <LoginScreen error={authError} onError={setAuthError} />;
+  }
+
+  if (isSupabaseConfigured && session && !currentProfile) {
+    return <AuthShell title="Perfil pendente" text="Seu login existe, mas ainda precisamos cadastrar seu perfil de acesso na tabela profiles." action={<button className="primary" onClick={() => signOut()}>Sair</button>} />;
+  }
+
   function openClient(client) {
     setSelectedId(client.id);
     setDrawerOpen(true);
@@ -113,7 +184,7 @@ function App() {
 
   function changeProfile(id) {
     setProfileId(id);
-    const nextProfile = profiles[id];
+    const nextProfile = profilePermissions[id];
     const nextClients = nextProfile.visibleOwners === 'all' ? appClients : appClients.filter((client) => nextProfile.visibleOwners.includes(client.owner));
     if (!nextClients.some((client) => client.id === selectedId)) setSelectedId(nextClients[0]?.id ?? appClients[0]?.id ?? fallbackClients[0].id);
     setDrawerOpen(false);
@@ -132,12 +203,12 @@ function App() {
         </nav>
         <section className="accessBox">
           <span className="muted">Perfil de visualizacao</span>
-          <div className="profileGrid">
-            {Object.entries(profiles).map(([id, item]) => <button key={id} className={profileId === id ? 'active' : ''} onClick={() => changeProfile(id)}>{item.label}</button>)}
-          </div>
+          {isSupabaseConfigured ? <strong className="lockedProfile">{profile.label}</strong> : <div className="profileGrid">
+            {Object.entries(profilePermissions).map(([id, item]) => <button key={id} className={profileId === id ? 'active' : ''} onClick={() => changeProfile(id)}>{item.label}</button>)}
+          </div>}
           <p>{profile.note}</p>
         </section>
-        <div className="userCard"><div className="avatar photo">{profile.user.split(' ').map((part) => part[0]).slice(0, 2).join('')}</div><div><strong>{profile.user}</strong><span>{profile.label}</span></div></div>
+        <div className="userCard"><div className="avatar photo">{profile.user.split(' ').map((part) => part[0]).slice(0, 2).join('')}</div><div><strong>{profile.user}</strong><span>{profile.label}</span></div>{isSupabaseConfigured && <button className="logoutButton" onClick={() => signOut()}>Sair</button>}</div>
       </aside>
 
       <main className="workspace">
@@ -185,6 +256,42 @@ function App() {
 
 function getVisibleFlags(client, profile) {
   return client.flags.filter((flag) => profile.canSeeSensitiveFlags || !flagConfig[flag]?.sensitive);
+}
+
+function AuthShell({ title, text, action }) {
+  return <main className="authPage"><section className="authCard"><div className="brandMark">M</div><h1>{title}</h1><p>{text}</p>{action}</section></main>;
+}
+
+function LoginScreen({ error, onError }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setLoading(true);
+    onError(null);
+
+    try {
+      await signInWithPassword(email, password);
+    } catch (_loginError) {
+      onError('Nao consegui entrar. Confira o e-mail e a senha.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return <main className="authPage">
+    <form className="authCard" onSubmit={handleSubmit}>
+      <div className="brandMark">M</div>
+      <h1>Mesa da Equipe</h1>
+      <p>Entre com seu acesso para visualizar clientes, pedidos e bloqueios conforme seu perfil.</p>
+      <label>E-mail<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@empresa.com" required /></label>
+      <label>Senha<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Sua senha" required /></label>
+      {error && <strong className="authError">{error}</strong>}
+      <button className="primary" disabled={loading}>{loading ? 'Entrando...' : 'Entrar'}</button>
+    </form>
+  </main>;
 }
 
 function Metric({ metric }) { const Icon = metric.icon; return <article className="metric"><Icon className={metric.tone ?? ''} size={24} /><strong>{metric.value}</strong><span>{metric.label}</span><small>{metric.hint}</small></article>; }
