@@ -34,6 +34,16 @@ do $$ begin
 exception when duplicate_object then null;
 end $$;
 
+do $$ begin
+  create type personal_task_status as enum ('A fazer', 'Em andamento', 'Concluida');
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type client_task_status as enum ('A fazer', 'Em andamento', 'Concluida');
+exception when duplicate_object then null;
+end $$;
+
 create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null,
@@ -108,6 +118,35 @@ create table if not exists client_history (
   created_at timestamptz not null default now()
 );
 
+create table if not exists personal_tasks (
+  id uuid primary key default gen_random_uuid(),
+  assigned_profile_id uuid not null references profiles(id) on delete cascade,
+  title text not null,
+  description text,
+  due_date date,
+  status personal_task_status not null default 'A fazer',
+  priority client_priority not null default 'Media',
+  created_by uuid references profiles(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists client_tasks (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references clients(id) on delete cascade,
+  assigned_profile_id uuid references profiles(id),
+  title text not null,
+  current_step text,
+  next_step text,
+  status client_task_status not null default 'A fazer',
+  priority client_priority not null default 'Media',
+  created_by uuid references profiles(id),
+  completed_by uuid references profiles(id),
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create or replace function touch_updated_at()
 returns trigger as $$
 begin
@@ -125,6 +164,12 @@ create trigger processes_touch_updated_at before update on processes for each ro
 drop trigger if exists orders_touch_updated_at on orders;
 create trigger orders_touch_updated_at before update on orders for each row execute function touch_updated_at();
 
+drop trigger if exists personal_tasks_touch_updated_at on personal_tasks;
+create trigger personal_tasks_touch_updated_at before update on personal_tasks for each row execute function touch_updated_at();
+
+drop trigger if exists client_tasks_touch_updated_at on client_tasks;
+create trigger client_tasks_touch_updated_at before update on client_tasks for each row execute function touch_updated_at();
+
 alter table profiles enable row level security;
 alter table clients enable row level security;
 alter table client_contacts enable row level security;
@@ -132,6 +177,8 @@ alter table client_flags enable row level security;
 alter table processes enable row level security;
 alter table orders enable row level security;
 alter table client_history enable row level security;
+alter table personal_tasks enable row level security;
+alter table client_tasks enable row level security;
 
 create or replace function get_app_user_role()
 returns app_role as $$
@@ -153,16 +200,17 @@ drop policy if exists "operational write by manager finance logistics" on client
 drop policy if exists "process write by manager or owner" on processes;
 drop policy if exists "orders write by manager finance logistics" on orders;
 drop policy if exists "history insert authenticated" on client_history;
+drop policy if exists "personal tasks private read" on personal_tasks;
+drop policy if exists "personal tasks private write" on personal_tasks;
+drop policy if exists "client tasks shared read" on client_tasks;
+drop policy if exists "client tasks shared write" on client_tasks;
 
 create policy "profiles can read own profile" on profiles for select using (id = auth.uid());
 create policy "managers can read all profiles" on profiles for select using (get_app_user_role() = 'manager');
 create policy "profiles can update own profile" on profiles for update using (id = auth.uid()) with check (id = auth.uid());
 create policy "managers can manage profiles" on profiles for all using (get_app_user_role() = 'manager') with check (get_app_user_role() = 'manager');
 
-create policy "clients read by role" on clients for select using (
-  get_app_user_role() in ('manager', 'finance', 'logistics')
-  or owner_profile_id = auth.uid()
-);
+create policy "clients read by role" on clients for select using (auth.uid() is not null);
 
 create policy "clients write by manager" on clients for all using (get_app_user_role() = 'manager') with check (get_app_user_role() = 'manager');
 
@@ -184,3 +232,19 @@ create policy "process write by manager or owner" on processes for all using (
 
 create policy "orders write by manager finance logistics" on orders for all using (get_app_user_role() in ('manager', 'finance', 'logistics')) with check (get_app_user_role() in ('manager', 'finance', 'logistics'));
 create policy "history insert authenticated" on client_history for insert with check (auth.uid() is not null);
+
+create policy "personal tasks private read" on personal_tasks for select using (
+  assigned_profile_id = auth.uid()
+  or get_app_user_role() = 'manager'
+);
+
+create policy "personal tasks private write" on personal_tasks for all using (
+  assigned_profile_id = auth.uid()
+  or get_app_user_role() = 'manager'
+) with check (
+  assigned_profile_id = auth.uid()
+  or get_app_user_role() = 'manager'
+);
+
+create policy "client tasks shared read" on client_tasks for select using (auth.uid() is not null);
+create policy "client tasks shared write" on client_tasks for all using (auth.uid() is not null) with check (auth.uid() is not null);
