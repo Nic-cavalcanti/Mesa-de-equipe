@@ -4,8 +4,8 @@ import { AlertTriangle, Bell, CalendarDays, CheckCircle2, ChevronDown, CircleDol
 import { clients as fallbackClients, team } from './data.js';
 import { isSupabaseConfigured } from './lib/supabase.js';
 import { getInitialSession, listenToAuthChanges, loadCurrentProfile, signInWithPassword, signOut } from './services/authRepository.js';
-import { loadClientsFromDatabase } from './services/clientRepository.js';
-import { completeClientTask, completePersonalTask, createPersonalTask, loadClientTasks, loadPersonalTasks, loadTeamProfiles } from './services/taskRepository.js';
+import { createClientRecord, loadClientsFromDatabase } from './services/clientRepository.js';
+import { completeClientTask, completePersonalTask, createClientTask, createPersonalTask, loadClientTasks, loadPersonalTasks, loadTeamProfiles } from './services/taskRepository.js';
 import './styles.css';
 
 const profilePermissions = {
@@ -83,6 +83,7 @@ function App() {
   const [query, setQuery] = useState('');
   const [profileId, setProfileId] = useState('manager');
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [showClientForm, setShowClientForm] = useState(false);
 
   const realProfileId = currentProfile?.role ?? profileId;
   const profile = useMemo(() => {
@@ -186,11 +187,24 @@ function App() {
     };
   }, [currentProfile]);
 
+  async function refreshClients() {
+    const result = await loadClientsFromDatabase();
+    if (result.clients) setDbClients(result.clients);
+    setDataSource(result.source);
+    setDbError(result.error);
+  }
+
   async function refreshTasks() {
     if (!isSupabaseConfigured) return;
     const [tasks, clientTaskRows] = await Promise.all([loadPersonalTasks(), loadClientTasks()]);
     setPersonalTasks(tasks);
     setClientTasks(clientTaskRows);
+  }
+
+  async function handleCreateClient(client) {
+    await createClientRecord(client);
+    await refreshClients();
+    setShowClientForm(false);
   }
 
   async function handleCreatePersonalTask(task) {
@@ -203,8 +217,13 @@ function App() {
     await refreshTasks();
   }
 
-  async function handleCompleteClientTask(id) {
-    await completeClientTask(id);
+  async function handleCreateClientTask(task) {
+    await createClientTask({ ...task, createdBy: currentProfile.id });
+    await refreshTasks();
+  }
+
+  async function handleCompleteClientTask(id, nextProfileId) {
+    await completeClientTask(id, nextProfileId);
     await refreshTasks();
   }
 
@@ -303,7 +322,7 @@ function App() {
           <div className="actions">
             <label className="search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar cliente, processo, pessoa, documento..." /></label>
             <button className="bell"><Bell size={18} /><span>3</span></button>
-            <button className="primary">+ Novo cliente</button>
+            <button className="primary" onClick={() => setShowClientForm((current) => !current)}>+ Novo cliente</button>
           </div>
         </header>
 
@@ -313,6 +332,7 @@ function App() {
         </section>
 
         {taskError && <p className="dbWarning">{taskError}</p>}
+        {showClientForm && <ClientCreateForm onCreate={handleCreateClient} onCancel={() => setShowClientForm(false)} />}
 
         {route === 'agenda' ? (
           <AgendaView
@@ -341,12 +361,45 @@ function App() {
         client={selected}
         profile={profile}
         clientTasks={selectedClientTasks}
+        teamProfiles={teamProfiles}
+        onCreateClientTask={handleCreateClientTask}
         onCompleteClientTask={handleCompleteClientTask}
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
       />
       {drawerOpen && <button className="drawerBackdrop" aria-label="Fechar detalhes" onClick={() => setDrawerOpen(false)} />}
     </div>
+  );
+}
+
+function ClientCreateForm({ onCreate, onCancel }) {
+  const [form, setForm] = useState({ clientCode: '', name: '', cnpj: '', segment: '', priority: 'Media', summary: '' });
+
+  function update(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    await onCreate(form);
+    setForm({ clientCode: '', name: '', cnpj: '', segment: '', priority: 'Media', summary: '' });
+  }
+
+  return (
+    <form className="taskComposer clientComposer" onSubmit={submit}>
+      <div><h2>Cadastrar cliente</h2><p>Use o ID interno para localizar rapidamente o cadastro depois.</p></div>
+      <div className="taskFormGrid">
+        <label>ID do cliente<input value={form.clientCode} onChange={(event) => update('clientCode', event.target.value)} placeholder="Ex.: CLI-1024" /></label>
+        <label>Nome<input value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Nome do cliente" required /></label>
+        <label>CNPJ opcional<input value={form.cnpj} onChange={(event) => update('cnpj', event.target.value)} placeholder="00.000.000/0000-00" /></label>
+      </div>
+      <div className="taskFormGrid">
+        <label>Segmento<input value={form.segment} onChange={(event) => update('segment', event.target.value)} placeholder="Distribuidor, varejo..." /></label>
+        <label>Prioridade<select value={form.priority} onChange={(event) => update('priority', event.target.value)}><option>Alta</option><option>Media</option><option>Baixa</option></select></label>
+        <label>Resumo<input value={form.summary} onChange={(event) => update('summary', event.target.value)} placeholder="Observacao inicial" /></label>
+      </div>
+      <div className="formActions"><button className="primary">Salvar cliente</button><button type="button" onClick={onCancel}>Cancelar</button></div>
+    </form>
   );
 }
 
@@ -403,7 +456,7 @@ function ClientWorkspace({ metrics, filter, setFilter, visibleClients, selectedI
 
 function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, onCreate, onComplete }) {
   const [ownerFilter, setOwnerFilter] = useState('all');
-  const [form, setForm] = useState({ title: '', description: '', dueDate: '', priority: 'Media', assignedId: currentProfile?.id ?? '' });
+  const [form, setForm] = useState({ title: '', description: '', dueDate: '', priority: 'Media', assignedId: currentProfile?.id ?? '', attachmentUrl: '', attachmentName: '' });
   const canManageAll = profile.id === 'manager';
   const assignableProfiles = canManageAll ? teamProfiles : teamProfiles.filter((item) => item.id === currentProfile?.id);
   const defaultAssignedId = form.assignedId || currentProfile?.id || assignableProfiles[0]?.id || '';
@@ -419,7 +472,7 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, onCr
     event.preventDefault();
     const assignedId = canManageAll ? defaultAssignedId : currentProfile.id;
     await onCreate({ ...form, assignedId });
-    setForm({ title: '', description: '', dueDate: '', priority: 'Media', assignedId });
+    setForm({ title: '', description: '', dueDate: '', priority: 'Media', assignedId, attachmentUrl: '', attachmentName: '' });
   }
 
   return (
@@ -428,6 +481,7 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, onCr
         <div><h2>Nova atividade</h2><p>{canManageAll ? 'Crie para voce, Pablo ou qualquer colaborador.' : 'Crie uma atividade para sua propria agenda.'}</p></div>
         <label>Titulo<input value={form.title} onChange={(event) => updateForm('title', event.target.value)} placeholder="Ex.: Revisar credito do cliente" required /></label>
         <label>Descricao<input value={form.description} onChange={(event) => updateForm('description', event.target.value)} placeholder="Contexto rapido" /></label>
+        <label>Anexo<input value={form.attachmentUrl} onChange={(event) => updateForm('attachmentUrl', event.target.value)} placeholder="Link do arquivo" /></label>
         <div className="taskFormGrid">
           <label>Prazo<input type="date" value={form.dueDate} onChange={(event) => updateForm('dueDate', event.target.value)} /></label>
           <label>Prioridade<select value={form.priority} onChange={(event) => updateForm('priority', event.target.value)}><option>Alta</option><option>Media</option><option>Baixa</option></select></label>
@@ -459,6 +513,7 @@ function TaskCard({ task, canComplete, onComplete }) {
     <div className={task.status === 'Concluida' ? 'taskCard done' : 'taskCard'}>
       <div><strong>{task.title}</strong><span>{task.assignedName}</span></div>
       {task.description && <p>{task.description}</p>}
+      {task.attachmentUrl && <a className="attachmentLink" href={task.attachmentUrl} target="_blank" rel="noreferrer">{task.attachmentName || 'Abrir anexo'}</a>}
       <footer><span>{task.dueDate || 'Sem prazo'}</span><span>{task.priority}</span>{canComplete && <button onClick={onComplete}><CheckCircle2 size={14} />Finalizar</button>}</footer>
     </div>
   );
@@ -515,8 +570,8 @@ function ClientCard({ client, profile, selected, onSelect, onOpen }) {
   const flags = getVisibleFlags(client, profile);
   return (
     <article className={selected ? 'clientCard selected' : 'clientCard'} onClick={onSelect}>
-      <div className="clientTop"><div><span className="muted">Cliente</span><h3>{client.name}</h3></div><div className="avatar">{client.initials}</div></div>
-      <div className="chips"><span>{client.segment}</span><span className={client.priority === 'Alta' ? 'danger' : client.priority === 'Media' ? 'warning' : 'success'}>{client.priority}</span><span>{client.health}</span></div>
+      <div className="clientTop"><div><span className="muted">{client.clientCode || 'Cliente'}</span><h3>{client.name}</h3></div><div className="avatar">{client.initials}</div></div>
+      <div className="chips"><span>{client.segment}</span>{client.cnpj && <span>{client.cnpj}</span>}<span className={client.priority === 'Alta' ? 'danger' : client.priority === 'Media' ? 'warning' : 'success'}>{client.priority}</span><span>{client.health}</span></div>
       <p>{client.summary}</p>
       <div className="flagList">{flags.length ? flags.map((flag) => <Flag key={flag} label={flag} />) : <span className="okFlag"><CheckCircle2 size={14} />Sem bloqueios visiveis</span>}</div>
       <div className="cardFooter"><span>{client.openProcesses} processos</span><span>{client.openOrders} pedidos</span><span>{client.nextDue}</span></div>
@@ -535,7 +590,7 @@ function LoadRow({ member }) {
   return <div className="loadRow"><span>{member.name}</span><div><i style={{ width: member.load + '%' }} /></div><strong>{member.load}%</strong></div>;
 }
 
-function ClientPanel({ client, profile, clientTasks, onCompleteClientTask, open, onClose }) {
+function ClientPanel({ client, profile, clientTasks, teamProfiles, onCreateClientTask, onCompleteClientTask, open, onClose }) {
   const visibleFlags = getVisibleFlags(client, profile);
   return (
     <aside className={open ? 'panel open' : 'panel'} aria-hidden={!open}>
@@ -544,9 +599,9 @@ function ClientPanel({ client, profile, clientTasks, onCompleteClientTask, open,
       <div className="panelHead"><div><h2>{client.name}</h2><span>{client.segment}</span></div><div className="avatar">{client.initials}</div></div>
       <div className="statusRail"><Step done label="Cadastro" /><Step done={client.flags.length === 0} active={client.flags.length > 0} label="Analise" /><Step label="Liberacao" /><Step label="Entrega" /></div>
       <section className="panelSection"><h3>Status operacional</h3><div className="flagList panelFlags">{visibleFlags.length ? visibleFlags.map((flag) => <Flag key={flag} label={flag} />) : <span className="okFlag"><CheckCircle2 size={14} />Sem bloqueios visiveis</span>}</div></section>
-      <section className="detailGrid"><div><span>Responsavel</span><strong>{client.owner}</strong></div><div><span>Proximo prazo</span><strong>{client.nextDue}</strong></div><div><span>Limite</span><strong>{profile.canSeeFinancial ? client.creditLimit : 'Restrito'}</strong></div><div><span>Utilizado</span><strong>{profile.canSeeFinancial ? client.usedLimit : 'Restrito'}</strong></div></section>
+      <section className="detailGrid"><div><span>ID</span><strong>{client.clientCode || '-'}</strong></div><div><span>CNPJ</span><strong>{client.cnpj || 'Nao informado'}</strong></div><div><span>Responsavel</span><strong>{client.owner}</strong></div><div><span>Proximo prazo</span><strong>{client.nextDue}</strong></div><div><span>Limite</span><strong>{profile.canSeeFinancial ? client.creditLimit : 'Restrito'}</strong></div><div><span>Utilizado</span><strong>{profile.canSeeFinancial ? client.usedLimit : 'Restrito'}</strong></div></section>
       <section className="panelSection"><h3>Processos</h3>{client.processes.map((process) => <div className="lineItem" key={process.title}><strong>{process.title}</strong><span>{process.category} - {process.status} - {process.due}</span></div>)}</section>
-      <section className="panelSection"><h3>Atividades do cliente</h3>{clientTasks.length ? clientTasks.map((task) => <ClientTaskLine key={task.id} task={task} onComplete={onCompleteClientTask} />) : <p className="history">Nenhuma atividade de cliente cadastrada ainda.</p>}</section>
+      <section className="panelSection"><h3>Atividades do cliente</h3><ClientTaskForm client={client} teamProfiles={teamProfiles} onCreate={onCreateClientTask} />{clientTasks.length ? clientTasks.map((task) => <ClientTaskLine key={task.id} task={task} teamProfiles={teamProfiles} onComplete={onCompleteClientTask} />) : <p className="history">Nenhuma atividade de cliente cadastrada ainda.</p>}</section>
       <section className="panelSection"><h3>Pedidos</h3>{client.orders.map((order) => <div className="lineItem" key={order.code}><strong>{order.code} - {order.status}</strong><span>{profile.canSeeFinancial ? order.invoice : 'Nota restrita'} - entrega {order.delivery}</span></div>)}</section>
       <section className="panelSection"><h3>Historico</h3>{client.history.map((item) => <p className="history" key={item}>{item}</p>)}</section>
       <div className="commentBox">Escrever comentario...<button><Send size={16} /></button></div>
@@ -554,12 +609,41 @@ function ClientPanel({ client, profile, clientTasks, onCompleteClientTask, open,
   );
 }
 
-function ClientTaskLine({ task, onComplete }) {
+function ClientTaskForm({ client, teamProfiles, onCreate }) {
+  const [form, setForm] = useState({ orderNumber: '', title: '', assignedId: '', nextProfileId: '', currentStep: '', nextStep: '', restrictionStatus: 'Sem restricoes', notes: '', attachmentName: '', attachmentUrl: '', priority: 'Media' });
+
+  function update(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    await onCreate({ ...form, clientId: client.id });
+    setForm({ orderNumber: '', title: '', assignedId: '', nextProfileId: '', currentStep: '', nextStep: '', restrictionStatus: 'Sem restricoes', notes: '', attachmentName: '', attachmentUrl: '', priority: 'Media' });
+  }
+
+  return (
+    <form className="miniTaskForm" onSubmit={submit}>
+      <label>Pedido<input value={form.orderNumber} onChange={(event) => update('orderNumber', event.target.value)} placeholder="Numero do pedido" required /></label>
+      <label>Atividade<input value={form.title} onChange={(event) => update('title', event.target.value)} placeholder="Ex.: Conferir pagamento" required /></label>
+      <label>Status<select value={form.restrictionStatus} onChange={(event) => update('restrictionStatus', event.target.value)}><option>Nao entregar</option><option>Aguardando pagamento</option><option>Nao faturar</option><option>Aguardando NF de transferencia</option><option>Sem restricoes</option></select></label>
+      <label>Responsavel<select value={form.assignedId} onChange={(event) => update('assignedId', event.target.value)}><option value="">Equipe</option>{teamProfiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <label>Proximo<select value={form.nextProfileId} onChange={(event) => update('nextProfileId', event.target.value)}><option value="">Entrega/final</option>{teamProfiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <label>Observacoes<input value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Detalhes importantes" /></label>
+      <label>Anexo<input value={form.attachmentUrl} onChange={(event) => update('attachmentUrl', event.target.value)} placeholder="Link do arquivo" /></label>
+      <button className="detailsButton">Criar atividade</button>
+    </form>
+  );
+}
+
+function ClientTaskLine({ task, teamProfiles, onComplete }) {
   return (
     <div className="lineItem actionLine">
       <strong>{task.title}</strong>
-      <span>{task.currentStep || 'Etapa atual'} - {task.nextStep || 'Proximo responsavel'} - {task.assignedName}</span>
-      {task.status !== 'Concluida' && <button onClick={() => onComplete(task.id)}><CheckCircle2 size={14} />Finalizar e liberar</button>}
+      <span>Pedido {task.orderNumber} - {task.restrictionStatus} - {task.assignedName}</span>
+      {task.notes && <p className="history">{task.notes}</p>}
+      {task.attachmentUrl && <a className="attachmentLink" href={task.attachmentUrl} target="_blank" rel="noreferrer">{task.attachmentName || 'Abrir anexo'}</a>}
+      {task.status !== 'Concluida' && <button onClick={() => onComplete(task.id, task.nextProfileId)}><CheckCircle2 size={14} />{task.nextProfileId ? 'Passar para proximo' : 'Encaminhar para entrega'}</button>}
     </div>
   );
 }

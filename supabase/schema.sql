@@ -44,6 +44,11 @@ do $$ begin
 exception when duplicate_object then null;
 end $$;
 
+do $$ begin
+  create type client_task_restriction as enum ('Nao entregar', 'Aguardando pagamento', 'Nao faturar', 'Aguardando NF de transferencia', 'Sem restricoes');
+exception when duplicate_object then null;
+end $$;
+
 create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null,
@@ -53,7 +58,9 @@ create table if not exists profiles (
 
 create table if not exists clients (
   id uuid primary key default gen_random_uuid(),
+  client_code text,
   name text not null,
+  cnpj text,
   segment text,
   owner_profile_id uuid references profiles(id),
   initials text,
@@ -126,18 +133,29 @@ create table if not exists personal_tasks (
   due_date date,
   status personal_task_status not null default 'A fazer',
   priority client_priority not null default 'Media',
+  attachment_name text,
+  attachment_url text,
   created_by uuid references profiles(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
+alter table clients add column if not exists client_code text;
+alter table clients add column if not exists cnpj text;
+
 create table if not exists client_tasks (
   id uuid primary key default gen_random_uuid(),
   client_id uuid not null references clients(id) on delete cascade,
+  order_number text not null,
   assigned_profile_id uuid references profiles(id),
+  next_profile_id uuid references profiles(id),
   title text not null,
   current_step text,
   next_step text,
+  restriction_status client_task_restriction not null default 'Sem restricoes',
+  notes text,
+  attachment_name text,
+  attachment_url text,
   status client_task_status not null default 'A fazer',
   priority client_priority not null default 'Media',
   created_by uuid references profiles(id),
@@ -146,6 +164,15 @@ create table if not exists client_tasks (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table client_tasks add column if not exists order_number text;
+alter table client_tasks add column if not exists next_profile_id uuid references profiles(id);
+alter table client_tasks add column if not exists restriction_status client_task_restriction not null default 'Sem restricoes';
+alter table client_tasks add column if not exists notes text;
+alter table client_tasks add column if not exists attachment_name text;
+alter table client_tasks add column if not exists attachment_url text;
+alter table personal_tasks add column if not exists attachment_name text;
+alter table personal_tasks add column if not exists attachment_url text;
 
 create or replace function touch_updated_at()
 returns trigger as $$
@@ -212,7 +239,7 @@ create policy "managers can manage profiles" on profiles for all using (get_app_
 
 create policy "clients read by role" on clients for select using (auth.uid() is not null);
 
-create policy "clients write by manager" on clients for all using (get_app_user_role() = 'manager') with check (get_app_user_role() = 'manager');
+create policy "clients write by manager" on clients for all using (auth.uid() is not null) with check (auth.uid() is not null);
 
 create policy "related contacts read by visible client" on client_contacts for select using (exists (select 1 from clients c where c.id = client_id));
 create policy "related flags read by visible client" on client_flags for select using (exists (select 1 from clients c where c.id = client_id));

@@ -24,7 +24,9 @@ function mapClient(row) {
 
   return {
     id: row.id,
+    clientCode: row.client_code ?? '',
     name: row.name,
+    cnpj: row.cnpj ?? '',
     segment: row.segment ?? 'Cliente',
     owner: row.profiles?.full_name ?? 'Sem responsavel',
     initials: row.initials ?? row.name.slice(0, 2).toUpperCase(),
@@ -82,4 +84,30 @@ export async function loadClientsFromDatabase() {
   }
 
   return { source: 'database', clients: data.map(mapClient), error: null };
+}
+
+
+export async function createClientRecord(client) {
+  if (!isSupabaseConfigured) throw new Error('Supabase nao configurado.');
+
+  const initials = client.name
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
+  const { error } = await supabase.from('clients').insert({
+    client_code: client.clientCode || null,
+    name: client.name,
+    cnpj: client.cnpj || null,
+    segment: client.segment || 'Cliente',
+    initials: initials || client.name.slice(0, 2).toUpperCase(),
+    health: 'Estavel',
+    priority: client.priority || 'Media',
+    summary: client.summary || 'Cliente cadastrado para acompanhamento operacional.'
+  });
+
+  if (error) throw error;
 }
