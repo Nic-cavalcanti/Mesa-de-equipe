@@ -52,6 +52,29 @@ const flagConfig = {
   'Solicita limite': { tone: 'info', icon: CircleDollarSign, sensitive: true }
 };
 
+function explainAuthError(error) {
+  const message = error?.message ?? String(error ?? '');
+  const lower = message.toLowerCase();
+
+  if (lower.includes('invalid login credentials')) {
+    return 'E-mail ou senha nao conferem com o usuario criado no Supabase.';
+  }
+
+  if (lower.includes('email not confirmed')) {
+    return 'Seu e-mail ainda nao esta confirmado no Supabase. Abra o usuario e marque como confirmado.';
+  }
+
+  if (lower.includes('fetch') || lower.includes('failed to fetch')) {
+    return 'Nao consegui conversar com o Supabase. Confira as variaveis VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY na Vercel e faca um novo deploy.';
+  }
+
+  if (lower.includes('row') || lower.includes('json object requested')) {
+    return 'Login aceito, mas o perfil ainda nao foi criado na tabela profiles para este usuario.';
+  }
+
+  return message || 'Nao consegui entrar agora. Confira o e-mail, a senha e as configuracoes do Supabase.';
+}
+
 function App() {
   const [route, setRoute] = useState('clients');
   const [session, setSession] = useState(null);
@@ -72,9 +95,10 @@ function App() {
     return {
       ...permission,
       user: currentProfile?.full_name ?? permission.fallbackUser,
+      email: session?.user?.email ?? '',
       id: realProfileId
     };
-  }, [currentProfile, realProfileId]);
+  }, [currentProfile, realProfileId, session]);
   const appClients = dbClients ?? fallbackClients;
   const selected = appClients.find((client) => client.id === selectedId) ?? appClients[0] ?? fallbackClients[0];
 
@@ -88,7 +112,7 @@ function App() {
         if (active) setSession(initialSession);
       })
       .catch((error) => {
-        if (active) setAuthError(error.message);
+        if (active) setAuthError(explainAuthError(error));
       })
       .finally(() => {
         if (active) setAuthLoading(false);
@@ -116,7 +140,7 @@ function App() {
         if (active) setCurrentProfile(loadedProfile);
       })
       .catch((error) => {
-        if (active) setAuthError(error.message);
+        if (active) setAuthError(explainAuthError(error));
       });
 
     return () => {
@@ -174,7 +198,7 @@ function App() {
   }
 
   if (isSupabaseConfigured && session && !currentProfile) {
-    return <AuthShell title="Perfil pendente" text="Seu login existe, mas ainda precisamos cadastrar seu perfil de acesso na tabela profiles." action={<button className="primary" onClick={() => signOut()}>Sair</button>} />;
+    return <AuthShell title="Perfil pendente" text={authError || 'Seu login existe, mas ainda precisamos cadastrar seu perfil de acesso na tabela profiles.'} action={<button className="primary" onClick={() => signOut()}>Sair</button>} />;
   }
 
   function openClient(client) {
@@ -208,7 +232,7 @@ function App() {
           </div>}
           <p>{profile.note}</p>
         </section>
-        <div className="userCard"><div className="avatar photo">{profile.user.split(' ').map((part) => part[0]).slice(0, 2).join('')}</div><div><strong>{profile.user}</strong><span>{profile.label}</span></div>{isSupabaseConfigured && <button className="logoutButton" onClick={() => signOut()}>Sair</button>}</div>
+        <div className="userCard"><div className="avatar photo">{profile.user.split(' ').map((part) => part[0]).slice(0, 2).join('')}</div><div><strong>{profile.user}</strong><span>{profile.email || profile.label}</span></div>{isSupabaseConfigured && <button className="logoutButton" onClick={() => signOut()}>Sair</button>}</div>
       </aside>
 
       <main className="workspace">
@@ -274,8 +298,8 @@ function LoginScreen({ error, onError }) {
 
     try {
       await signInWithPassword(email, password);
-    } catch (_loginError) {
-      onError('Nao consegui entrar. Confira o e-mail e a senha.');
+    } catch (loginError) {
+      onError(explainAuthError(loginError));
     } finally {
       setLoading(false);
     }
