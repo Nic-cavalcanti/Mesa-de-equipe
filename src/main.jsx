@@ -5,7 +5,7 @@ import { clients as fallbackClients, team } from './data.js';
 import { isSupabaseConfigured } from './lib/supabase.js';
 import { getInitialSession, listenToAuthChanges, loadCurrentProfile, signInWithPassword, signOut } from './services/authRepository.js';
 import { createClientRecord, loadClientsFromDatabase } from './services/clientRepository.js';
-import { completeClientTask, completePersonalTask, createClientTask, createPersonalTask, loadClientTasks, loadPersonalTasks, loadTeamProfiles } from './services/taskRepository.js';
+import { addPersonalTaskComment, completeClientTask, completePersonalTask, createClientTask, createPersonalTask, loadClientTasks, loadPersonalTasks, loadTeamProfiles, updatePersonalTaskStatus } from './services/taskRepository.js';
 import './styles.css';
 
 const profilePermissions = {
@@ -66,7 +66,7 @@ function explainAuthError(error) {
 }
 
 function App() {
-  const [route, setRoute] = useState('clients');
+  const [route, setRoute] = useState('agenda');
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
   const [authError, setAuthError] = useState(null);
@@ -212,6 +212,16 @@ function App() {
     await refreshTasks();
   }
 
+  async function handleUpdatePersonalTaskStatus(id, status) {
+    await updatePersonalTaskStatus(id, status);
+    await refreshTasks();
+  }
+
+  async function handleSavePersonalTaskComment(id, comments) {
+    await addPersonalTaskComment(id, comments);
+    await refreshTasks();
+  }
+
   async function handleCompletePersonalTask(id) {
     await completePersonalTask(id);
     await refreshTasks();
@@ -273,9 +283,17 @@ function App() {
     return <AuthShell title="Perfil pendente" text={authError || 'Seu login existe, mas ainda precisamos cadastrar seu perfil de acesso na tabela profiles.'} action={<button className="primary" onClick={() => signOut()}>Sair</button>} />;
   }
 
-  const title = route === 'agenda' ? 'Minha Agenda' : route === 'clients' ? 'Clientes' : route === 'orders' ? 'Pedidos' : 'Visao geral';
+  const routeTitles = {
+    clients: 'Clientes',
+    agenda: 'Agenda',
+    orders: 'Pedidos',
+    reports: 'Relatorios'
+  };
+  const title = routeTitles[route] ?? 'Visao geral';
   const bannerText = route === 'agenda'
     ? profile.id === 'manager' ? 'Gestores veem e criam atividades para toda a equipe.' : 'Sua agenda e privada: so voce e gestores conseguem ver.'
+    : route === 'orders' ? 'Pedidos reúnem as atividades operacionais por numero de pedido e restricao.'
+    : route === 'reports' ? 'Relatorios consolidam bloqueios, pedidos e carga da equipe.'
     : profile.canSeeFinancial ? 'Voce esta vendo informacoes financeiras e operacionais.' : 'Valores de limite, uso de credito e bloqueios financeiros estao ocultos neste perfil.';
 
   return (
@@ -287,11 +305,9 @@ function App() {
         </div>
 
         <nav className="nav">
-          <button className={route === 'home' ? 'active' : ''} onClick={() => setRoute('home')}><Home size={18} />Inicio</button>
+          <button className={route === 'agenda' ? 'active' : ''} onClick={() => setRoute('agenda')}><CalendarDays size={18} />Agenda</button>
           <button className={route === 'clients' ? 'active' : ''} onClick={() => setRoute('clients')}><UsersRound size={18} />Clientes</button>
-          <button className={route === 'agenda' ? 'active' : ''} onClick={() => setRoute('agenda')}><CalendarDays size={18} />Minha Agenda</button>
           <button className={route === 'orders' ? 'active' : ''} onClick={() => setRoute('orders')}><PackageCheck size={18} />Pedidos</button>
-          <button className={route === 'calendar' ? 'active' : ''} onClick={() => setRoute('calendar')}><CalendarDays size={18} />Calendario</button>
           <button className={route === 'reports' ? 'active' : ''} onClick={() => setRoute('reports')}><ClipboardList size={18} />Relatorios</button>
         </nav>
 
@@ -332,29 +348,27 @@ function App() {
         </section>
 
         {taskError && <p className="dbWarning">{taskError}</p>}
-        {showClientForm && <ClientCreateForm onCreate={handleCreateClient} onCancel={() => setShowClientForm(false)} />}
+        {route === 'clients' && showClientForm && <ClientCreateForm onCreate={handleCreateClient} onCancel={() => setShowClientForm(false)} />}
 
-        {route === 'agenda' ? (
-          <AgendaView
-            profile={profile}
-            currentProfile={currentProfile}
-            teamProfiles={teamProfiles}
-            personalTasks={personalTasks}
-            onCreate={handleCreatePersonalTask}
-            onComplete={handleCompletePersonalTask}
-          />
-        ) : (
-          <ClientWorkspace
-            metrics={metrics}
-            filter={filter}
-            setFilter={setFilter}
-            visibleClients={visibleClients}
-            selectedId={selectedId}
-            setSelectedId={setSelectedId}
-            openClient={openClient}
-            profile={profile}
-          />
-        )}
+        <MainContent
+          route={route}
+          metrics={metrics}
+          filter={filter}
+          setFilter={setFilter}
+          visibleClients={visibleClients}
+          selectedId={selectedId}
+          setSelectedId={setSelectedId}
+          openClient={openClient}
+          profile={profile}
+          currentProfile={currentProfile}
+          teamProfiles={teamProfiles}
+          personalTasks={personalTasks}
+          clientTasks={clientTasks}
+          onCreatePersonalTask={handleCreatePersonalTask}
+          onCompletePersonalTask={handleCompletePersonalTask}
+          onUpdatePersonalTaskStatus={handleUpdatePersonalTaskStatus}
+          onSavePersonalTaskComment={handleSavePersonalTaskComment}
+        />
       </main>
 
       <ClientPanel
@@ -369,6 +383,114 @@ function App() {
       />
       {drawerOpen && <button className="drawerBackdrop" aria-label="Fechar detalhes" onClick={() => setDrawerOpen(false)} />}
     </div>
+  );
+}
+
+function MainContent({ route, metrics, filter, setFilter, visibleClients, selectedId, setSelectedId, openClient, profile, currentProfile, teamProfiles, personalTasks, clientTasks, onCreatePersonalTask, onCompletePersonalTask, onUpdatePersonalTaskStatus, onSavePersonalTaskComment }) {
+  if (route === 'agenda') {
+    return <AgendaView profile={profile} currentProfile={currentProfile} teamProfiles={teamProfiles} personalTasks={personalTasks} onCreate={onCreatePersonalTask} onComplete={onCompletePersonalTask} onUpdateStatus={onUpdatePersonalTaskStatus} onSaveComment={onSavePersonalTaskComment} />;
+  }
+
+  if (route === 'orders') {
+    return <OrdersView clientTasks={clientTasks} openClient={openClient} clients={visibleClients} />;
+  }
+
+  if (route === 'calendar') {
+    return <CalendarView personalTasks={personalTasks} clientTasks={clientTasks} />;
+  }
+
+  if (route === 'reports') {
+    return <ReportsView metrics={metrics} clientTasks={clientTasks} personalTasks={personalTasks} clients={visibleClients} />;
+  }
+
+  if (route === 'home') {
+    return <HomeView metrics={metrics} clientTasks={clientTasks} personalTasks={personalTasks} clients={visibleClients} />;
+  }
+
+  return <ClientWorkspace metrics={metrics} filter={filter} setFilter={setFilter} visibleClients={visibleClients} selectedId={selectedId} setSelectedId={setSelectedId} openClient={openClient} profile={profile} />;
+}
+
+function HomeView({ metrics, clientTasks, personalTasks, clients }) {
+  const openClientTasks = clientTasks.filter((task) => task.status !== 'Concluida');
+  const openPersonalTasks = personalTasks.filter((task) => task.status !== 'Concluida');
+
+  return (
+    <section className="routeSurface">
+      <section className="metrics">{metrics.map((metric) => <Metric key={metric.label} metric={metric} />)}</section>
+      <div className="splitSurface">
+        <article><h2>Pedidos em acompanhamento</h2>{openClientTasks.slice(0, 5).map((task) => <CompactOrder key={task.id} task={task} />)}{!openClientTasks.length && <p className="emptyState">Nenhum pedido em aberto.</p>}</article>
+        <article><h2>Agenda em aberto</h2>{openPersonalTasks.slice(0, 5).map((task) => <TaskCard key={task.id} task={task} />)}{!openPersonalTasks.length && <p className="emptyState">Nenhuma atividade pendente.</p>}</article>
+        <article><h2>Clientes recentes</h2>{clients.slice(0, 5).map((client) => <p className="listLine" key={client.id}><strong>{client.name}</strong><span>{client.clientCode || client.segment}</span></p>)}</article>
+      </div>
+    </section>
+  );
+}
+
+function OrdersView({ clientTasks, openClient, clients }) {
+  const openTasks = clientTasks.filter((task) => task.status !== 'Concluida');
+  const doneTasks = clientTasks.filter((task) => task.status === 'Concluida');
+
+  function openTaskClient(task) {
+    const client = clients.find((item) => item.id === task.clientId);
+    if (client) openClient(client);
+  }
+
+  return (
+    <section className="routeSurface">
+      <div className="sectionTitle"><div><h2>Pedidos operacionais</h2><p>Acompanhe restricoes, responsaveis e passagem para o proximo colaborador.</p></div><strong>{openTasks.length} em aberto</strong></div>
+      <div className="orderBoard">
+        <article><h2>Em andamento</h2>{openTasks.map((task) => <OrderCard key={task.id} task={task} onOpen={() => openTaskClient(task)} />)}{!openTasks.length && <p className="emptyState">Nenhum pedido em andamento.</p>}</article>
+        <article><h2>Finalizados</h2>{doneTasks.map((task) => <OrderCard key={task.id} task={task} done onOpen={() => openTaskClient(task)} />)}{!doneTasks.length && <p className="emptyState">Pedidos finalizados aparecem aqui.</p>}</article>
+      </div>
+    </section>
+  );
+}
+
+function OrderCard({ task, done, onOpen }) {
+  return (
+    <button className={done ? 'orderCard done' : 'orderCard'} onClick={onOpen}>
+      <span>Pedido {task.orderNumber || '-'}</span>
+      <strong>{task.title}</strong>
+      <small>{task.clientName} - {task.restrictionStatus}</small>
+      <em>{task.assignedName}{task.nextProfileName ? ' -> ' + task.nextProfileName : ''}</em>
+    </button>
+  );
+}
+
+function CompactOrder({ task }) {
+  return <p className="listLine"><strong>Pedido {task.orderNumber || '-'}</strong><span>{task.clientName} - {task.restrictionStatus}</span></p>;
+}
+
+function CalendarView({ personalTasks, clientTasks }) {
+  const openPersonal = personalTasks.filter((task) => task.status !== 'Concluida');
+  const openOrders = clientTasks.filter((task) => task.status !== 'Concluida');
+
+  return (
+    <section className="routeSurface">
+      <div className="sectionTitle"><div><h2>Calendario de trabalho</h2><p>Prazos pessoais e pedidos que precisam de acompanhamento.</p></div></div>
+      <div className="calendarGrid">
+        <article><h2>Atividades com prazo</h2>{openPersonal.map((task) => <TaskCard key={task.id} task={task} />)}{!openPersonal.length && <p className="emptyState">Nenhum prazo pessoal aberto.</p>}</article>
+        <article><h2>Pedidos sem finalizar</h2>{openOrders.map((task) => <CompactOrder key={task.id} task={task} />)}{!openOrders.length && <p className="emptyState">Nenhum pedido pendente.</p>}</article>
+      </div>
+    </section>
+  );
+}
+
+function ReportsView({ metrics, clientTasks, personalTasks, clients }) {
+  const blockedOrders = clientTasks.filter((task) => task.restrictionStatus && task.restrictionStatus !== 'Sem restricoes');
+  const doneOrders = clientTasks.filter((task) => task.status === 'Concluida');
+  const openPersonal = personalTasks.filter((task) => task.status !== 'Concluida');
+
+  return (
+    <section className="routeSurface">
+      <section className="metrics">{metrics.map((metric) => <Metric key={metric.label} metric={metric} />)}</section>
+      <div className="reportGrid">
+        <article><h2>Pedidos com restricao</h2><strong className="largeNumber">{blockedOrders.length}</strong><span>na operacao</span></article>
+        <article><h2>Pedidos finalizados</h2><strong className="largeNumber">{doneOrders.length}</strong><span>no fluxo</span></article>
+        <article><h2>Atividades abertas</h2><strong className="largeNumber">{openPersonal.length}</strong><span>na agenda</span></article>
+        <article><h2>Clientes cadastrados</h2><strong className="largeNumber">{clients.length}</strong><span>ativos na base</span></article>
+      </div>
+    </section>
   );
 }
 
@@ -454,15 +576,14 @@ function ClientWorkspace({ metrics, filter, setFilter, visibleClients, selectedI
   );
 }
 
-function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, onCreate, onComplete }) {
+function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, onCreate, onComplete, onUpdateStatus, onSaveComment }) {
   const [ownerFilter, setOwnerFilter] = useState('all');
-  const [form, setForm] = useState({ title: '', description: '', dueDate: '', priority: 'Media', assignedId: currentProfile?.id ?? '', attachmentUrl: '', attachmentName: '' });
+  const [form, setForm] = useState({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId: currentProfile?.id ?? '', attachmentUrl: '', attachmentName: '' });
   const canManageAll = profile.id === 'manager';
   const assignableProfiles = canManageAll ? teamProfiles : teamProfiles.filter((item) => item.id === currentProfile?.id);
   const defaultAssignedId = form.assignedId || currentProfile?.id || assignableProfiles[0]?.id || '';
   const filteredTasks = personalTasks.filter((task) => canManageAll && ownerFilter !== 'all' ? task.assignedId === ownerFilter : true);
-  const openTasks = filteredTasks.filter((task) => task.status !== 'Concluida');
-  const doneTasks = filteredTasks.filter((task) => task.status === 'Concluida');
+  const columns = buildAgendaColumns(filteredTasks);
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -472,7 +593,7 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, onCr
     event.preventDefault();
     const assignedId = canManageAll ? defaultAssignedId : currentProfile.id;
     await onCreate({ ...form, assignedId });
-    setForm({ title: '', description: '', dueDate: '', priority: 'Media', assignedId, attachmentUrl: '', attachmentName: '' });
+    setForm({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId, attachmentUrl: '', attachmentName: '' });
   }
 
   return (
@@ -480,7 +601,7 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, onCr
       <form className="taskComposer" onSubmit={submitTask}>
         <div><h2>Nova atividade</h2><p>{canManageAll ? 'Crie para voce, Pablo ou qualquer colaborador.' : 'Crie uma atividade para sua propria agenda.'}</p></div>
         <label>Titulo<input value={form.title} onChange={(event) => updateForm('title', event.target.value)} placeholder="Ex.: Revisar credito do cliente" required /></label>
-        <label>Descricao<input value={form.description} onChange={(event) => updateForm('description', event.target.value)} placeholder="Contexto rapido" /></label>
+        <label>Observacoes<input value={form.description} onChange={(event) => updateForm('description', event.target.value)} placeholder="Contexto rapido" /></label>
         <label>Anexo<input value={form.attachmentUrl} onChange={(event) => updateForm('attachmentUrl', event.target.value)} placeholder="Link do arquivo" /></label>
         <div className="taskFormGrid">
           <label>Prazo<input type="date" value={form.dueDate} onChange={(event) => updateForm('dueDate', event.target.value)} /></label>
@@ -500,21 +621,61 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, onCr
         </section>
       )}
 
-      <div className="taskColumns">
-        <article><h2>Pendentes <span>{openTasks.length}</span></h2>{openTasks.map((task) => <TaskCard key={task.id} task={task} canComplete onComplete={() => onComplete(task.id)} />)}{!openTasks.length && <p className="emptyState">Nada pendente por aqui.</p>}</article>
-        <article><h2>Finalizadas <span>{doneTasks.length}</span></h2>{doneTasks.map((task) => <TaskCard key={task.id} task={task} />)}{!doneTasks.length && <p className="emptyState">As concluidas aparecerao aqui.</p>}</article>
+      <div className="agendaColumns">
+        {columns.map((column) => (
+          <article key={column.id}>
+            <h2>{column.label} <span>{column.tasks.length}</span></h2>
+            {column.tasks.map((task) => <TaskCard key={task.id} task={task} canComplete onComplete={() => onComplete(task.id)} onUpdateStatus={onUpdateStatus} onSaveComment={onSaveComment} />)}
+            {!column.tasks.length && <p className="emptyState">Nada por aqui.</p>}
+          </article>
+        ))}
       </div>
     </section>
   );
 }
 
-function TaskCard({ task, canComplete, onComplete }) {
+function buildAgendaColumns(tasks) {
+  const notDone = tasks.filter((task) => task.status !== 'Concluida');
+  return [
+    { id: 'new', label: 'Novas', tasks: notDone.filter((task) => task.status === 'A fazer' && !isOverdue(task)) },
+    { id: 'late', label: 'Atrasadas', tasks: notDone.filter(isOverdue) },
+    { id: 'doing', label: 'Em andamento', tasks: notDone.filter((task) => task.status === 'Em andamento' && !isOverdue(task)) },
+    { id: 'done', label: 'Finalizadas', tasks: tasks.filter((task) => task.status === 'Concluida') }
+  ];
+}
+
+function isOverdue(task) {
+  if (!task.dueDate || task.status === 'Concluida') return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(task.dueDate + 'T00:00:00');
+  return due < today;
+}
+
+function dueText(task) {
+  if (!task.dueDate) return 'Sem prazo';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(task.dueDate + 'T00:00:00');
+  const days = Math.round((due - today) / 86400000);
+  if (days < 0) return 'Atrasada ha ' + Math.abs(days) + ' dia(s)';
+  if (days === 0) return 'Vence hoje';
+  if (days === 1) return 'Vence amanha';
+  return days + ' dias restantes';
+}
+
+function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment }) {
+  const [comment, setComment] = useState(task.comments ?? '');
+
   return (
-    <div className={task.status === 'Concluida' ? 'taskCard done' : 'taskCard'}>
+    <div className={task.status === 'Concluida' ? 'taskCard done' : isOverdue(task) ? 'taskCard overdue' : 'taskCard'}>
       <div><strong>{task.title}</strong><span>{task.assignedName}</span></div>
       {task.description && <p>{task.description}</p>}
       {task.attachmentUrl && <a className="attachmentLink" href={task.attachmentUrl} target="_blank" rel="noreferrer">{task.attachmentName || 'Abrir anexo'}</a>}
-      <footer><span>{task.dueDate || 'Sem prazo'}</span><span>{task.priority}</span>{canComplete && <button onClick={onComplete}><CheckCircle2 size={14} />Finalizar</button>}</footer>
+      <footer><span>{dueText(task)}</span><span>{task.priority}</span></footer>
+      {onUpdateStatus && <label className="statusControl">Status<select value={task.status} onChange={(event) => onUpdateStatus(task.id, event.target.value)}><option>A fazer</option><option>Em andamento</option><option>Concluida</option></select></label>}
+      {onSaveComment && <div className="commentControl"><input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Comentario da atividade" /><button onClick={() => onSaveComment(task.id, comment)}>Comentar</button></div>}
+      {canComplete && task.status !== 'Concluida' && <button className="completeButton" onClick={onComplete}><CheckCircle2 size={14} />Finalizar</button>}
     </div>
   );
 }

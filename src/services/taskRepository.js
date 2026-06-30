@@ -13,6 +13,7 @@ function mapPersonalTask(row) {
     id: row.id,
     title: row.title,
     description: row.description ?? '',
+    comments: row.comments ?? '',
     dueDate: row.due_date ?? '',
     status: row.status,
     priority: row.priority,
@@ -62,7 +63,7 @@ export async function loadPersonalTasks() {
 
   const { data, error } = await supabase
     .from('personal_tasks')
-    .select('id, title, description, due_date, status, priority, attachment_name, attachment_url, assigned_profile_id, assigned_profile:profiles!personal_tasks_assigned_profile_id_fkey(full_name)')
+    .select('id, title, description, comments, due_date, status, priority, attachment_name, attachment_url, assigned_profile_id, assigned_profile:profiles!personal_tasks_assigned_profile_id_fkey(full_name)')
     .order('due_date', { ascending: true, nullsFirst: false });
 
   if (error) throw error;
@@ -73,6 +74,7 @@ export async function createPersonalTask(task) {
   const { error } = await supabase.from('personal_tasks').insert({
     title: task.title,
     description: task.description || null,
+    comments: task.comments || null,
     due_date: task.dueDate || null,
     priority: task.priority,
     attachment_name: task.attachmentName || null,
@@ -84,13 +86,26 @@ export async function createPersonalTask(task) {
   if (error) throw error;
 }
 
-export async function completePersonalTask(id) {
+export async function updatePersonalTaskStatus(id, status) {
   const { error } = await supabase
     .from('personal_tasks')
-    .update({ status: 'Concluida' })
+    .update({ status })
     .eq('id', id);
 
   if (error) throw error;
+}
+
+export async function addPersonalTaskComment(id, comments) {
+  const { error } = await supabase
+    .from('personal_tasks')
+    .update({ comments })
+    .eq('id', id);
+
+  if (error) throw error;
+}
+
+export async function completePersonalTask(id) {
+  return updatePersonalTaskStatus(id, 'Concluida');
 }
 
 export async function createClientTask(task) {

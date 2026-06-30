@@ -130,6 +130,7 @@ create table if not exists personal_tasks (
   assigned_profile_id uuid not null references profiles(id) on delete cascade,
   title text not null,
   description text,
+  comments text,
   due_date date,
   status personal_task_status not null default 'A fazer',
   priority client_priority not null default 'Media',
@@ -173,6 +174,7 @@ alter table client_tasks add column if not exists attachment_name text;
 alter table client_tasks add column if not exists attachment_url text;
 alter table personal_tasks add column if not exists attachment_name text;
 alter table personal_tasks add column if not exists attachment_url text;
+alter table personal_tasks add column if not exists comments text;
 
 create or replace function touch_updated_at()
 returns trigger as $$
