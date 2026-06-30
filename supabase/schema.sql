@@ -269,9 +269,11 @@ create policy "personal tasks private read" on personal_tasks for select using (
 
 create policy "personal tasks private write" on personal_tasks for all using (
   assigned_profile_id = auth.uid()
+  or created_by = auth.uid()
   or get_app_user_role() = 'manager'
 ) with check (
   assigned_profile_id = auth.uid()
+  or created_by = auth.uid()
   or get_app_user_role() = 'manager'
 );
 

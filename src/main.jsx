@@ -83,6 +83,7 @@ function App() {
   const [query, setQuery] = useState('');
   const [profileId, setProfileId] = useState('manager');
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [showClientForm, setShowClientForm] = useState(false);
 
   const realProfileId = currentProfile?.role ?? profileId;
@@ -99,6 +100,7 @@ function App() {
   const appClients = dbClients ?? fallbackClients;
   const selected = appClients.find((client) => client.id === selectedId) ?? appClients[0] ?? fallbackClients[0];
   const selectedClientTasks = clientTasks.filter((task) => task.clientId === selected?.id);
+  const selectedOrderTask = clientTasks.find((task) => task.id === selectedTaskId) ?? null;
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -239,7 +241,19 @@ function App() {
 
   function openClient(client) {
     setSelectedId(client.id);
+    setSelectedTaskId(null);
     setDrawerOpen(true);
+  }
+
+  function openOrderTask(task) {
+    setSelectedId(task.clientId);
+    setSelectedTaskId(task.id);
+    setDrawerOpen(true);
+  }
+
+  function closeDetail() {
+    setSelectedTaskId(null);
+    setDrawerOpen(false);
   }
 
   function changeProfile(id) {
@@ -359,6 +373,7 @@ function App() {
           selectedId={selectedId}
           setSelectedId={setSelectedId}
           openClient={openClient}
+          openOrderTask={openOrderTask}
           profile={profile}
           currentProfile={currentProfile}
           teamProfiles={teamProfiles}
@@ -377,22 +392,24 @@ function App() {
         clientTasks={selectedClientTasks}
         teamProfiles={teamProfiles}
         onCreateClientTask={handleCreateClientTask}
+        selectedTask={selectedOrderTask}
+        onOpenTask={setSelectedTaskId}
         onCompleteClientTask={handleCompleteClientTask}
         open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={closeDetail}
       />
-      {drawerOpen && <button className="drawerBackdrop" aria-label="Fechar detalhes" onClick={() => setDrawerOpen(false)} />}
+      
     </div>
   );
 }
 
-function MainContent({ route, metrics, filter, setFilter, visibleClients, selectedId, setSelectedId, openClient, profile, currentProfile, teamProfiles, personalTasks, clientTasks, onCreatePersonalTask, onCompletePersonalTask, onUpdatePersonalTaskStatus, onSavePersonalTaskComment }) {
+function MainContent({ route, metrics, filter, setFilter, visibleClients, selectedId, setSelectedId, openClient, openOrderTask, profile, currentProfile, teamProfiles, personalTasks, clientTasks, onCreatePersonalTask, onCompletePersonalTask, onUpdatePersonalTaskStatus, onSavePersonalTaskComment }) {
   if (route === 'agenda') {
     return <AgendaView profile={profile} currentProfile={currentProfile} teamProfiles={teamProfiles} personalTasks={personalTasks} onCreate={onCreatePersonalTask} onComplete={onCompletePersonalTask} onUpdateStatus={onUpdatePersonalTaskStatus} onSaveComment={onSavePersonalTaskComment} />;
   }
 
   if (route === 'orders') {
-    return <OrdersView clientTasks={clientTasks} openClient={openClient} clients={visibleClients} />;
+    return <OrdersView clientTasks={clientTasks} openClient={openClient} openOrderTask={openOrderTask} clients={visibleClients} />;
   }
 
   if (route === 'calendar') {
@@ -426,7 +443,7 @@ function HomeView({ metrics, clientTasks, personalTasks, clients }) {
   );
 }
 
-function OrdersView({ clientTasks, openClient, clients }) {
+function OrdersView({ clientTasks, openClient, openOrderTask, clients }) {
   const openTasks = clientTasks.filter((task) => task.status !== 'Concluida');
   const doneTasks = clientTasks.filter((task) => task.status === 'Concluida');
 
@@ -439,8 +456,8 @@ function OrdersView({ clientTasks, openClient, clients }) {
     <section className="routeSurface">
       <div className="sectionTitle"><div><h2>Pedidos operacionais</h2><p>Acompanhe restricoes, responsaveis e passagem para o proximo colaborador.</p></div><strong>{openTasks.length} em aberto</strong></div>
       <div className="orderBoard">
-        <article><h2>Em andamento</h2>{openTasks.map((task) => <OrderCard key={task.id} task={task} onOpen={() => openTaskClient(task)} />)}{!openTasks.length && <p className="emptyState">Nenhum pedido em andamento.</p>}</article>
-        <article><h2>Finalizados</h2>{doneTasks.map((task) => <OrderCard key={task.id} task={task} done onOpen={() => openTaskClient(task)} />)}{!doneTasks.length && <p className="emptyState">Pedidos finalizados aparecem aqui.</p>}</article>
+        <article><h2>Em andamento</h2>{openTasks.map((task) => <OrderCard key={task.id} task={task} onOpen={() => openOrderTask(task)} />)}{!openTasks.length && <p className="emptyState">Nenhum pedido em andamento.</p>}</article>
+        <article><h2>Finalizados</h2>{doneTasks.map((task) => <OrderCard key={task.id} task={task} done onOpen={() => openOrderTask(task)} />)}{!doneTasks.length && <p className="emptyState">Pedidos finalizados aparecem aqui.</p>}</article>
       </div>
     </section>
   );
@@ -751,22 +768,92 @@ function LoadRow({ member }) {
   return <div className="loadRow"><span>{member.name}</span><div><i style={{ width: member.load + '%' }} /></div><strong>{member.load}%</strong></div>;
 }
 
-function ClientPanel({ client, profile, clientTasks, teamProfiles, onCreateClientTask, onCompleteClientTask, open, onClose }) {
+function ClientPanel({ client, profile, clientTasks, teamProfiles, onCreateClientTask, selectedTask, onOpenTask, onCompleteClientTask, open, onClose }) {
   const visibleFlags = getVisibleFlags(client, profile);
+  if (!open) return null;
+
+  if (selectedTask) {
+    return <OrderDetailPage task={selectedTask} client={client} teamProfiles={teamProfiles} onBack={() => onOpenTask(null)} onClose={onClose} onComplete={onCompleteClientTask} />;
+  }
+
   return (
-    <aside className={open ? 'panel open' : 'panel'} aria-hidden={!open}>
-      <button className="closePanel" type="button" onClick={onClose}><X size={18} /></button>
-      <div className="panelPriority"><span className={client.priority === 'Alta' ? 'dot danger' : 'dot warning'} />{client.priority} prioridade</div>
-      <div className="panelHead"><div><h2>{client.name}</h2><span>{client.segment}</span></div><div className="avatar">{client.initials}</div></div>
-      <div className="statusRail"><Step done label="Cadastro" /><Step done={client.flags.length === 0} active={client.flags.length > 0} label="Analise" /><Step label="Liberacao" /><Step label="Entrega" /></div>
-      <section className="panelSection"><h3>Status operacional</h3><div className="flagList panelFlags">{visibleFlags.length ? visibleFlags.map((flag) => <Flag key={flag} label={flag} />) : <span className="okFlag"><CheckCircle2 size={14} />Sem bloqueios visiveis</span>}</div></section>
-      <section className="detailGrid"><div><span>ID</span><strong>{client.clientCode || '-'}</strong></div><div><span>CNPJ</span><strong>{client.cnpj || 'Nao informado'}</strong></div><div><span>Responsavel</span><strong>{client.owner}</strong></div><div><span>Proximo prazo</span><strong>{client.nextDue}</strong></div><div><span>Limite</span><strong>{profile.canSeeFinancial ? client.creditLimit : 'Restrito'}</strong></div><div><span>Utilizado</span><strong>{profile.canSeeFinancial ? client.usedLimit : 'Restrito'}</strong></div></section>
-      <section className="panelSection"><h3>Processos</h3>{client.processes.map((process) => <div className="lineItem" key={process.title}><strong>{process.title}</strong><span>{process.category} - {process.status} - {process.due}</span></div>)}</section>
-      <section className="panelSection"><h3>Atividades do cliente</h3><ClientTaskForm client={client} teamProfiles={teamProfiles} onCreate={onCreateClientTask} />{clientTasks.length ? clientTasks.map((task) => <ClientTaskLine key={task.id} task={task} teamProfiles={teamProfiles} onComplete={onCompleteClientTask} />) : <p className="history">Nenhuma atividade de cliente cadastrada ainda.</p>}</section>
-      <section className="panelSection"><h3>Pedidos</h3>{client.orders.map((order) => <div className="lineItem" key={order.code}><strong>{order.code} - {order.status}</strong><span>{profile.canSeeFinancial ? order.invoice : 'Nota restrita'} - entrega {order.delivery}</span></div>)}</section>
-      <section className="panelSection"><h3>Historico</h3>{client.history.map((item) => <p className="history" key={item}>{item}</p>)}</section>
-      <div className="commentBox">Escrever comentario...<button><Send size={16} /></button></div>
-    </aside>
+    <section className="detailPage">
+      <header className="detailHeader">
+        <div><span>Cliente</span><h1>{client.name}</h1><p>{client.clientCode || 'Sem ID'} · {client.cnpj || 'CNPJ nao informado'} · {client.segment}</p></div>
+        <button className="closePanel" type="button" onClick={onClose}><X size={18} /></button>
+      </header>
+
+      <div className="detailLayout">
+        <main className="detailMain">
+          <section className="detailBlock highlightBlock">
+            <h2>Status operacional</h2>
+            <div className="flagList panelFlags">{visibleFlags.length ? visibleFlags.map((flag) => <Flag key={flag} label={flag} />) : <span className="okFlag"><CheckCircle2 size={14} />Sem bloqueios visiveis</span>}</div>
+            <p>{client.summary}</p>
+          </section>
+
+          <section className="detailBlock">
+            <div className="sectionTitle compact"><div><h2>Pedidos e atividades</h2><p>Clique em um pedido para abrir a ficha completa.</p></div><strong>{clientTasks.length}</strong></div>
+            <div className="orderListFull">
+              {clientTasks.length ? clientTasks.map((task) => <OrderRow key={task.id} task={task} onOpen={() => onOpenTask(task.id)} />) : <p className="emptyState">Nenhum pedido cadastrado para este cliente.</p>}
+            </div>
+          </section>
+
+          <section className="detailBlock">
+            <h2>Novo pedido / atividade</h2>
+            <ClientTaskForm client={client} teamProfiles={teamProfiles} onCreate={onCreateClientTask} />
+          </section>
+        </main>
+
+        <aside className="detailSide">
+          <section className="detailBlock"><h2>Dados do cliente</h2><div className="detailGrid"><div><span>ID</span><strong>{client.clientCode || '-'}</strong></div><div><span>CNPJ</span><strong>{client.cnpj || 'Nao informado'}</strong></div><div><span>Prioridade</span><strong>{client.priority}</strong></div><div><span>Saude</span><strong>{client.health}</strong></div><div><span>Limite</span><strong>{profile.canSeeFinancial ? client.creditLimit : 'Restrito'}</strong></div><div><span>Utilizado</span><strong>{profile.canSeeFinancial ? client.usedLimit : 'Restrito'}</strong></div></div></section>
+          <section className="detailBlock"><h2>Historico</h2>{client.history.map((item) => <p className="history" key={item}>{item}</p>)}{!client.history.length && <p className="emptyState">Sem historico ainda.</p>}</section>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function OrderRow({ task, onOpen }) {
+  return (
+    <button className="orderRow" onClick={onOpen}>
+      <div><span>Pedido {task.orderNumber || '-'}</span><strong>{task.title}</strong><small>{task.clientName}</small></div>
+      <div><em>{task.restrictionStatus}</em><span>{task.assignedName}{task.nextProfileName ? ' -> ' + task.nextProfileName : ''}</span></div>
+    </button>
+  );
+}
+
+function OrderDetailPage({ task, client, teamProfiles, onBack, onClose, onComplete }) {
+  const [nextProfileId, setNextProfileId] = useState(task.nextProfileId || '');
+
+  return (
+    <section className="detailPage">
+      <header className="detailHeader">
+        <div><span>Pedido {task.orderNumber || '-'}</span><h1>{task.title}</h1><p>{client.name} · {task.restrictionStatus}</p></div>
+        <div className="detailActions"><button type="button" onClick={onBack}>Voltar ao cliente</button><button className="closePanel" type="button" onClick={onClose}><X size={18} /></button></div>
+      </header>
+
+      <div className="detailLayout">
+        <main className="detailMain">
+          <section className="detailBlock highlightBlock">
+            <h2>Resumo do pedido</h2>
+            <div className="orderMetaGrid"><div><span>Status</span><strong>{task.status}</strong></div><div><span>Restricao</span><strong>{task.restrictionStatus}</strong></div><div><span>Responsavel atual</span><strong>{task.assignedName}</strong></div><div><span>Proximo</span><strong>{task.nextProfileName || 'Entrega/final'}</strong></div></div>
+            {task.notes && <p>{task.notes}</p>}
+            {task.attachmentUrl && <a className="attachmentLink" href={task.attachmentUrl} target="_blank" rel="noreferrer">{task.attachmentName || 'Abrir anexo'}</a>}
+          </section>
+
+          <section className="detailBlock conversationBlock">
+            <h2>Historico e comentarios</h2>
+            <div className="messageBubble"><strong>{task.assignedName}</strong><p>{task.notes || 'Pedido criado para acompanhamento operacional.'}</p></div>
+            {task.status === 'Concluida' && <div className="messageBubble successBubble"><strong>Sistema</strong><p>Pedido encaminhado para entrega/finalizado.</p></div>}
+          </section>
+        </main>
+
+        <aside className="detailSide">
+          <section className="detailBlock"><h2>Encaminhamento</h2><label className="statusControl">Proximo responsavel<select value={nextProfileId} onChange={(event) => setNextProfileId(event.target.value)}><option value="">Entrega/final</option>{teamProfiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><button className="primary wideButton" onClick={() => onComplete(task.id, nextProfileId)}>{nextProfileId ? 'Passar para proximo' : 'Encaminhar para entrega'}</button></section>
+          <section className="detailBlock"><h2>Cliente</h2><p className="listLine"><strong>{client.name}</strong><span>{client.clientCode || client.segment}</span></p><p className="listLine"><strong>CNPJ</strong><span>{client.cnpj || 'Nao informado'}</span></p></section>
+        </aside>
+      </div>
+    </section>
   );
 }
 
@@ -794,18 +881,6 @@ function ClientTaskForm({ client, teamProfiles, onCreate }) {
       <label>Anexo<input value={form.attachmentUrl} onChange={(event) => update('attachmentUrl', event.target.value)} placeholder="Link do arquivo" /></label>
       <button className="detailsButton">Criar atividade</button>
     </form>
-  );
-}
-
-function ClientTaskLine({ task, teamProfiles, onComplete }) {
-  return (
-    <div className="lineItem actionLine">
-      <strong>{task.title}</strong>
-      <span>Pedido {task.orderNumber} - {task.restrictionStatus} - {task.assignedName}</span>
-      {task.notes && <p className="history">{task.notes}</p>}
-      {task.attachmentUrl && <a className="attachmentLink" href={task.attachmentUrl} target="_blank" rel="noreferrer">{task.attachmentName || 'Abrir anexo'}</a>}
-      {task.status !== 'Concluida' && <button onClick={() => onComplete(task.id, task.nextProfileId)}><CheckCircle2 size={14} />{task.nextProfileId ? 'Passar para proximo' : 'Encaminhar para entrega'}</button>}
-    </div>
   );
 }
 

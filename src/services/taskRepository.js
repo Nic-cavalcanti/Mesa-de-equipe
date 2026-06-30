@@ -46,6 +46,28 @@ function mapClientTask(row) {
   };
 }
 
+async function createAgendaEntryFromClientTask(task, assignedId, createdBy, action = 'Pedido encaminhado') {
+  if (!assignedId) return;
+
+  const orderLabel = task.orderNumber || task.order_number || 'sem numero';
+  const title = task.title || 'Atividade do pedido';
+  const restriction = task.restrictionStatus || task.restriction_status || 'Sem restricoes';
+  const notes = task.notes || '';
+
+  const { error } = await supabase.from('personal_tasks').insert({
+    title: `Pedido ${orderLabel} - ${title}`,
+    description: `${action}. Status: ${restriction}.`,
+    comments: notes || null,
+    priority: task.priority || 'Media',
+    attachment_name: task.attachmentName || task.attachment_name || null,
+    attachment_url: task.attachmentUrl || task.attachment_url || null,
+    assigned_profile_id: assignedId,
+    created_by: createdBy
+  });
+
+  if (error) throw error;
+}
+
 export async function loadTeamProfiles() {
   if (!isSupabaseConfigured) return [];
 
@@ -109,7 +131,7 @@ export async function completePersonalTask(id) {
 }
 
 export async function createClientTask(task) {
-  const { error } = await supabase.from('client_tasks').insert({
+  const { data, error } = await supabase.from('client_tasks').insert({
     client_id: task.clientId,
     order_number: task.orderNumber,
     title: task.title,
@@ -123,14 +145,30 @@ export async function createClientTask(task) {
     attachment_url: task.attachmentUrl || null,
     priority: task.priority || 'Media',
     created_by: task.createdBy
-  });
+  }).select('id, order_number, title, restriction_status, notes, attachment_name, attachment_url, priority').single();
 
   if (error) throw error;
+
+  await createAgendaEntryFromClientTask({
+    ...data,
+    orderNumber: data.order_number,
+    restrictionStatus: data.restriction_status,
+    attachmentName: data.attachment_name,
+    attachmentUrl: data.attachment_url
+  }, task.assignedId, task.createdBy, 'Novo pedido atribuido');
 }
 
 export async function completeClientTask(id, nextProfileId = null) {
   const { data: userData, error: userError } = await supabase.auth.getUser();
   if (userError) throw userError;
+
+  const { data: currentTask, error: loadError } = await supabase
+    .from('client_tasks')
+    .select('id, order_number, title, restriction_status, notes, attachment_name, attachment_url, priority')
+    .eq('id', id)
+    .single();
+
+  if (loadError) throw loadError;
 
   const updates = nextProfileId ? {
     status: 'Em andamento',
@@ -152,6 +190,10 @@ export async function completeClientTask(id, nextProfileId = null) {
     .eq('id', id);
 
   if (error) throw error;
+
+  if (nextProfileId) {
+    await createAgendaEntryFromClientTask(currentTask, nextProfileId, userData.user.id, 'Pedido passado para sua etapa');
+  }
 }
 
 export async function loadClientTasks() {
