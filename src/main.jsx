@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertTriangle, Bell, CalendarDays, CheckCircle2, ChevronDown, CircleDollarSign, ClipboardList, Eye, EyeOff, FileText, Home, Lock, PackageCheck, Search, Send, ShieldAlert, UsersRound, X } from 'lucide-react';
+import { AlertTriangle, Bell, CalendarDays, CheckCircle2, CircleDollarSign, ClipboardList, Eye, EyeOff, FileText, Home, Lock, PackageCheck, Send, ShieldAlert, UsersRound, X } from 'lucide-react';
 import { clients as fallbackClients, team } from './data.js';
 import { isSupabaseConfigured } from './lib/supabase.js';
 import { getInitialSession, listenToAuthChanges, loadCurrentProfile, signInWithPassword, signOut } from './services/authRepository.js';
@@ -80,11 +80,11 @@ function App() {
   const [dbError, setDbError] = useState(null);
   const [selectedId, setSelectedId] = useState(fallbackClients[0].id);
   const [filter, setFilter] = useState('all');
-  const [query, setQuery] = useState('');
   const [profileId, setProfileId] = useState('manager');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [showClientForm, setShowClientForm] = useState(false);
+  const [showTaskForm, setShowTaskForm] = useState(false);
 
   const realProfileId = currentProfile?.role ?? profileId;
   const profile = useMemo(() => {
@@ -220,8 +220,14 @@ function App() {
   }
 
   async function handleSavePersonalTaskComment(id, comments) {
-    await addPersonalTaskComment(id, comments);
-    await refreshTasks();
+    setTaskError(null);
+    try {
+      await addPersonalTaskComment(id, comments);
+      await refreshTasks();
+    } catch (error) {
+      setTaskError(explainAuthError(error));
+      throw error;
+    }
   }
 
   async function handleCompletePersonalTask(id) {
@@ -237,6 +243,7 @@ function App() {
   async function handleCompleteClientTask(id, nextProfileId) {
     await completeClientTask(id, nextProfileId);
     await refreshTasks();
+    if (!nextProfileId) closeDetail();
   }
 
   function openClient(client) {
@@ -278,10 +285,9 @@ function App() {
         (filter === 'invoice' && visibleFlags.includes('Nao emite nota fiscal')) ||
         (filter === 'limit' && visibleFlags.includes('Solicita limite')) ||
         (filter === 'healthy' && visibleFlags.length === 0);
-      const text = [client.name, client.segment, client.owner, ...visibleFlags].join(' ').toLowerCase();
-      return matchesFilter && text.includes(query.toLowerCase());
+      return matchesFilter;
     });
-  }, [allowedClients, filter, query, profile]);
+  }, [allowedClients, filter, profile]);
 
   const metrics = [
     { label: 'Clientes visiveis', value: visibleClients.length, hint: profile.canSeeAllClients ? 'visao completa' : 'somente atribuidos', icon: UsersRound },
@@ -350,9 +356,9 @@ function App() {
         <header className="topbar">
           <div><p>Bom dia, {profile.user.split(' ')[0]}!</p><h1>{title}</h1></div>
           <div className="actions">
-            <label className="search"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar cliente, processo, pessoa, documento..." /></label>
             <button className="bell"><Bell size={18} /><span>3</span></button>
-            <button className="primary" onClick={() => setShowClientForm((current) => !current)}>+ Novo cliente</button>
+            {route === 'agenda' && <button className="primary" onClick={() => setShowTaskForm(true)}>+ Nova atividade</button>}
+            {route === 'clients' && <button className="primary" onClick={() => setShowClientForm((current) => !current)}>+ Novo cliente</button>}
           </div>
         </header>
 
@@ -379,6 +385,8 @@ function App() {
           teamProfiles={teamProfiles}
           personalTasks={personalTasks}
           clientTasks={clientTasks}
+          showTaskForm={showTaskForm}
+          onCloseTaskForm={() => setShowTaskForm(false)}
           onCreatePersonalTask={handleCreatePersonalTask}
           onCompletePersonalTask={handleCompletePersonalTask}
           onUpdatePersonalTaskStatus={handleUpdatePersonalTaskStatus}
@@ -403,9 +411,9 @@ function App() {
   );
 }
 
-function MainContent({ route, metrics, filter, setFilter, visibleClients, selectedId, setSelectedId, openClient, openOrderTask, profile, currentProfile, teamProfiles, personalTasks, clientTasks, onCreatePersonalTask, onCompletePersonalTask, onUpdatePersonalTaskStatus, onSavePersonalTaskComment }) {
+function MainContent({ route, metrics, filter, setFilter, visibleClients, selectedId, setSelectedId, openClient, openOrderTask, profile, currentProfile, teamProfiles, personalTasks, clientTasks, showTaskForm, onCloseTaskForm, onCreatePersonalTask, onCompletePersonalTask, onUpdatePersonalTaskStatus, onSavePersonalTaskComment }) {
   if (route === 'agenda') {
-    return <AgendaView profile={profile} currentProfile={currentProfile} teamProfiles={teamProfiles} personalTasks={personalTasks} onCreate={onCreatePersonalTask} onComplete={onCompletePersonalTask} onUpdateStatus={onUpdatePersonalTaskStatus} onSaveComment={onSavePersonalTaskComment} />;
+    return <AgendaView profile={profile} currentProfile={currentProfile} teamProfiles={teamProfiles} personalTasks={personalTasks} showTaskForm={showTaskForm} onCloseTaskForm={onCloseTaskForm} onCreate={onCreatePersonalTask} onComplete={onCompletePersonalTask} onUpdateStatus={onUpdatePersonalTaskStatus} onSaveComment={onSavePersonalTaskComment} />;
   }
 
   if (route === 'orders') {
@@ -424,7 +432,7 @@ function MainContent({ route, metrics, filter, setFilter, visibleClients, select
     return <HomeView metrics={metrics} clientTasks={clientTasks} personalTasks={personalTasks} clients={visibleClients} />;
   }
 
-  return <ClientWorkspace metrics={metrics} filter={filter} setFilter={setFilter} visibleClients={visibleClients} selectedId={selectedId} setSelectedId={setSelectedId} openClient={openClient} profile={profile} />;
+  return <ClientWorkspace metrics={metrics} visibleClients={visibleClients} selectedId={selectedId} setSelectedId={setSelectedId} openClient={openClient} openOrderTask={openOrderTask} profile={profile} clientTasks={clientTasks} />;
 }
 
 function HomeView({ metrics, clientTasks, personalTasks, clients }) {
@@ -445,19 +453,12 @@ function HomeView({ metrics, clientTasks, personalTasks, clients }) {
 
 function OrdersView({ clientTasks, openClient, openOrderTask, clients }) {
   const openTasks = clientTasks.filter((task) => task.status !== 'Concluida');
-  const doneTasks = clientTasks.filter((task) => task.status === 'Concluida');
-
-  function openTaskClient(task) {
-    const client = clients.find((item) => item.id === task.clientId);
-    if (client) openClient(client);
-  }
 
   return (
     <section className="routeSurface">
-      <div className="sectionTitle"><div><h2>Pedidos operacionais</h2><p>Acompanhe restricoes, responsaveis e passagem para o proximo colaborador.</p></div><strong>{openTasks.length} em aberto</strong></div>
-      <div className="orderBoard">
-        <article><h2>Em andamento</h2>{openTasks.map((task) => <OrderCard key={task.id} task={task} onOpen={() => openOrderTask(task)} />)}{!openTasks.length && <p className="emptyState">Nenhum pedido em andamento.</p>}</article>
-        <article><h2>Finalizados</h2>{doneTasks.map((task) => <OrderCard key={task.id} task={task} done onOpen={() => openOrderTask(task)} />)}{!doneTasks.length && <p className="emptyState">Pedidos finalizados aparecem aqui.</p>}</article>
+      <div className="sectionTitle"><div><h2>Pedidos em aberto</h2><p>Apenas pedidos pendentes de finalizacao aparecem aqui.</p></div><strong>{openTasks.length} pendentes</strong></div>
+      <div className="orderBoard singleBoard">
+        <article><h2>Pendentes</h2>{openTasks.map((task) => <OrderCard key={task.id} task={task} onOpen={() => openOrderTask(task)} />)}{!openTasks.length && <p className="emptyState">Nenhum pedido pendente.</p>}</article>
       </div>
     </section>
   );
@@ -542,37 +543,27 @@ function ClientCreateForm({ onCreate, onCancel }) {
   );
 }
 
-function ClientWorkspace({ metrics, filter, setFilter, visibleClients, selectedId, setSelectedId, openClient, profile }) {
-  const filters = [
-    ['all', 'Todos'],
-    ['blocked', 'Com bloqueio'],
-    ['delivery', 'Segura entrega'],
-    ['invoice', 'Nao emite nota fiscal'],
-    ['limit', 'Solicita limite'],
-    ['healthy', 'Sem bloqueio']
+function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, openClient, openOrderTask, profile, clientTasks }) {
+  const [stageFilter, setStageFilter] = useState('all');
+  const openTasks = clientTasks.filter((task) => task.status !== 'Concluida');
+  const clientsWithOpenTasks = visibleClients.filter((client) => openTasks.some((task) => task.clientId === client.id));
+  const orderGroups = [
+    { id: 'pay', title: 'Aguardando pagamento', tasks: openTasks.filter((task) => task.restrictionStatus === 'Aguardando pagamento') },
+    { id: 'delivery', title: 'Entrega nao liberada', tasks: openTasks.filter((task) => task.restrictionStatus === 'Nao entregar' || task.restrictionStatus === 'Nao faturar') },
+    { id: 'transfer', title: 'Aguardando NF de transferencia', tasks: openTasks.filter((task) => task.restrictionStatus === 'Aguardando NF de transferencia') },
+    { id: 'released', title: 'Pedidos liberados para entrega', tasks: openTasks.filter((task) => task.restrictionStatus === 'Sem restricoes') }
   ];
+  const visibleOrderGroups = stageFilter === 'all' ? orderGroups : orderGroups.filter((group) => group.id === stageFilter);
 
   return (
-    <>
-      <section className="metrics">{metrics.map((metric) => <Metric key={metric.label} metric={metric} />)}</section>
-
-      <section className="filters">
-        {filters.map(([id, label]) => <button key={id} className={filter === id ? 'active' : ''} onClick={() => setFilter(id)}>{label}</button>)}
+    <section className="clientWorkspaceClean">
+      <section className="clientSummaryGrid">
+        <button type="button" className={stageFilter === 'all' ? 'summaryCard active' : 'summaryCard'} onClick={() => setStageFilter('all')}><span>1</span><strong>Clientes com atividades</strong><em>{clientsWithOpenTasks.length}</em></button>
+        {orderGroups.map((group, index) => <button type="button" className={stageFilter === group.id ? 'summaryCard clickable active' : 'summaryCard clickable'} key={group.id} onClick={() => setStageFilter(group.id)}><span>{index + 2}</span><strong>{group.title}</strong><em>{group.tasks.length}</em></button>)}
       </section>
 
-      <section className="toolbar">
-        <button>Segmento <ChevronDown size={14} /></button>
-        <button>Responsavel <ChevronDown size={14} /></button>
-        <button>Prioridade <ChevronDown size={14} /></button>
-        <button>Status operacional <ChevronDown size={14} /></button>
-        <span>Visualizacao</span>
-        <button className="active">Clientes</button>
-        <button>Pedidos</button>
-        <button>Timeline</button>
-      </section>
-
-      <section className="clientGrid">
-        {visibleClients.map((client) => (
+      <section className="clientGrid activeClients">
+        {clientsWithOpenTasks.map((client) => (
           <ClientCard
             key={client.id}
             client={client}
@@ -582,18 +573,23 @@ function ClientWorkspace({ metrics, filter, setFilter, visibleClients, selectedI
             onOpen={() => openClient(client)}
           />
         ))}
+        {!clientsWithOpenTasks.length && <p className="emptyState">Nenhum cliente com atividade aberta.</p>}
       </section>
 
-      <section className="overview">
-        <article><h2>Carga por colaborador</h2>{team.map((member) => <LoadRow key={member.name} member={member} />)}</article>
-        <article><h2>Bloqueios visiveis</h2><div className="donut"></div><p><i className="dot danger"></i>Segura entrega</p><p><i className="dot warning"></i>Nota fiscal</p><p><i className="dot info"></i>Limite</p></article>
-        <article><h2>Protecao</h2><strong className="largeNumber">4</strong><span>perfis simulados</span><p className="muted">Agenda pessoal fica privada por usuario.</p></article>
+      <section className="orderStageGrid">
+        {visibleOrderGroups.map((group) => (
+          <article key={group.id}>
+            <h2>{group.title} <span>{group.tasks.length}</span></h2>
+            {group.tasks.map((task) => <OrderCard key={task.id} task={task} onOpen={() => openOrderTask(task)} />)}
+            {!group.tasks.length && <p className="emptyState">Nada nesta etapa.</p>}
+          </article>
+        ))}
       </section>
-    </>
+    </section>
   );
 }
 
-function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, onCreate, onComplete, onUpdateStatus, onSaveComment }) {
+function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, showTaskForm, onCloseTaskForm, onCreate, onComplete, onUpdateStatus, onSaveComment }) {
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [form, setForm] = useState({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId: currentProfile?.id ?? '', attachmentUrl: '', attachmentName: '' });
   const canManageAll = profile.id === 'manager';
@@ -611,36 +607,41 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, onCr
     const assignedId = canManageAll ? defaultAssignedId : currentProfile.id;
     await onCreate({ ...form, assignedId });
     setForm({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId, attachmentUrl: '', attachmentName: '' });
+    onCloseTaskForm();
   }
 
   return (
     <section className="agendaView">
-      <form className="taskComposer" onSubmit={submitTask}>
-        <div><h2>Nova atividade</h2><p>{canManageAll ? 'Crie para voce, Pablo ou qualquer colaborador.' : 'Crie uma atividade para sua propria agenda.'}</p></div>
-        <label>Titulo<input value={form.title} onChange={(event) => updateForm('title', event.target.value)} placeholder="Ex.: Revisar credito do cliente" required /></label>
-        <label>Observacoes<input value={form.description} onChange={(event) => updateForm('description', event.target.value)} placeholder="Contexto rapido" /></label>
-        <label>Anexo<input value={form.attachmentUrl} onChange={(event) => updateForm('attachmentUrl', event.target.value)} placeholder="Link do arquivo" /></label>
-        <div className="taskFormGrid">
-          <label>Prazo<input type="date" value={form.dueDate} onChange={(event) => updateForm('dueDate', event.target.value)} /></label>
-          <label>Prioridade<select value={form.priority} onChange={(event) => updateForm('priority', event.target.value)}><option>Alta</option><option>Media</option><option>Baixa</option></select></label>
-          {canManageAll && (
-            <label>Responsavel<select value={defaultAssignedId} onChange={(event) => updateForm('assignedId', event.target.value)}>{assignableProfiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-          )}
+      {showTaskForm && (
+        <div className="modalBackdrop" onClick={onCloseTaskForm}>
+          <form className="taskComposer floatingComposer" onSubmit={submitTask} onClick={(event) => event.stopPropagation()}>
+            <div className="modalHead"><div><h2>Nova atividade</h2><p>{canManageAll ? 'Crie para voce, Pablo ou qualquer colaborador.' : 'Crie uma atividade para sua propria agenda.'}</p></div><button type="button" onClick={onCloseTaskForm}><X size={16} /></button></div>
+            <label>Titulo<input value={form.title} onChange={(event) => updateForm('title', event.target.value)} placeholder="Ex.: Revisar credito do cliente" required /></label>
+            <label>Observacoes<input value={form.description} onChange={(event) => updateForm('description', event.target.value)} placeholder="Contexto rapido" /></label>
+            <label>Anexo<input value={form.attachmentUrl} onChange={(event) => updateForm('attachmentUrl', event.target.value)} placeholder="Link do arquivo" /></label>
+            <div className="taskFormGrid">
+              <label>Prazo<input type="date" value={form.dueDate} onChange={(event) => updateForm('dueDate', event.target.value)} /></label>
+              <label>Prioridade<select value={form.priority} onChange={(event) => updateForm('priority', event.target.value)}><option>Alta</option><option>Media</option><option>Baixa</option></select></label>
+              {canManageAll && (
+                <label>Responsavel<select value={defaultAssignedId} onChange={(event) => updateForm('assignedId', event.target.value)}>{assignableProfiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+              )}
+            </div>
+            <button className="primary">Criar atividade</button>
+          </form>
         </div>
-        <button className="primary">Criar atividade</button>
-      </form>
+      )}
 
       {canManageAll && (
         <section className="agendaFilter">
           <span>Ver agenda</span>
-          <button className={ownerFilter === 'all' ? 'active' : ''} onClick={() => setOwnerFilter('all')}>Todos</button>
-          {teamProfiles.map((item) => <button key={item.id} className={ownerFilter === item.id ? 'active' : ''} onClick={() => setOwnerFilter(item.id)}>{item.name}</button>)}
+          <button type="button" className={ownerFilter === 'all' ? 'active' : ''} onClick={() => setOwnerFilter('all')}>Todos</button>
+          {teamProfiles.map((item) => <button type="button" key={item.id} className={ownerFilter === item.id ? 'active' : ''} onClick={() => setOwnerFilter(item.id)}>{item.name}</button>)}
         </section>
       )}
 
-      <div className="agendaColumns">
+      <div className="agendaColumns coloredColumns">
         {columns.map((column) => (
-          <article key={column.id}>
+          <article key={column.id} className={'agendaColumn ' + column.id}>
             <h2>{column.label} <span>{column.tasks.length}</span></h2>
             {column.tasks.map((task) => <TaskCard key={task.id} task={task} canComplete onComplete={() => onComplete(task.id)} onUpdateStatus={onUpdateStatus} onSaveComment={onSaveComment} />)}
             {!column.tasks.length && <p className="emptyState">Nada por aqui.</p>}
@@ -683,16 +684,34 @@ function dueText(task) {
 
 function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment }) {
   const [comment, setComment] = useState(task.comments ?? '');
+  const [savingComment, setSavingComment] = useState(false);
+  const [savedComment, setSavedComment] = useState(false);
+
+  useEffect(() => {
+    setComment(task.comments ?? '');
+    setSavedComment(false);
+  }, [task.id, task.comments]);
+
+  async function saveComment() {
+    setSavingComment(true);
+    setSavedComment(false);
+    try {
+      await onSaveComment(task.id, comment);
+      setSavedComment(true);
+    } finally {
+      setSavingComment(false);
+    }
+  }
 
   return (
-    <div className={task.status === 'Concluida' ? 'taskCard done' : isOverdue(task) ? 'taskCard overdue' : 'taskCard'}>
+    <div className={task.status === 'Concluida' ? 'taskCard done' : isOverdue(task) ? 'taskCard overdue' : task.status === 'Em andamento' ? 'taskCard doing' : 'taskCard'}>
       <div><strong>{task.title}</strong><span>{task.assignedName}</span></div>
       {task.description && <p>{task.description}</p>}
       {task.attachmentUrl && <a className="attachmentLink" href={task.attachmentUrl} target="_blank" rel="noreferrer">{task.attachmentName || 'Abrir anexo'}</a>}
       <footer><span>{dueText(task)}</span><span>{task.priority}</span></footer>
       {onUpdateStatus && <label className="statusControl">Status<select value={task.status} onChange={(event) => onUpdateStatus(task.id, event.target.value)}><option>A fazer</option><option>Em andamento</option><option>Concluida</option></select></label>}
-      {onSaveComment && <div className="commentControl"><input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Comentario da atividade" /><button onClick={() => onSaveComment(task.id, comment)}>Comentar</button></div>}
-      {canComplete && task.status !== 'Concluida' && <button className="completeButton" onClick={onComplete}><CheckCircle2 size={14} />Finalizar</button>}
+      {onSaveComment && <div className="commentArea"><textarea value={comment} onChange={(event) => { setComment(event.target.value); setSavedComment(false); }} placeholder="Comentario da atividade" /><div><span>{savedComment ? 'Comentario salvo' : ''}</span><button type="button" onClick={saveComment} disabled={savingComment}>{savingComment ? 'Salvando...' : 'Comentar'}</button></div></div>}
+      {canComplete && task.status !== 'Concluida' && <button type="button" className="completeButton" onClick={onComplete}><CheckCircle2 size={14} />Finalizar</button>}
     </div>
   );
 }
