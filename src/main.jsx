@@ -545,7 +545,13 @@ function ClientCreateForm({ onCreate, onCancel }) {
 
 function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, openClient, openOrderTask, profile, clientTasks }) {
   const [stageFilter, setStageFilter] = useState('all');
+  const [clientSearch, setClientSearch] = useState('');
   const openTasks = clientTasks.filter((task) => task.status !== 'Concluida');
+  const normalizedSearch = clientSearch.trim().toLowerCase();
+  const searchedClients = visibleClients.filter((client) => {
+    if (!normalizedSearch) return true;
+    return [client.name, client.clientCode, client.cnpj].filter(Boolean).join(' ').toLowerCase().includes(normalizedSearch);
+  });
   const clientsWithOpenTasks = visibleClients.filter((client) => openTasks.some((task) => task.clientId === client.id));
   const orderGroups = [
     { id: 'pay', title: 'Aguardando pagamento', tasks: openTasks.filter((task) => task.restrictionStatus === 'Aguardando pagamento') },
@@ -557,13 +563,17 @@ function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, o
 
   return (
     <section className="clientWorkspaceClean">
+      <section className="clientSearchBar">
+        <label>Buscar cliente<input value={clientSearch} onChange={(event) => setClientSearch(event.target.value)} placeholder="Digite nome, ID ou CNPJ" /></label>
+      </section>
+
       <section className="clientSummaryGrid">
-        <button type="button" className={stageFilter === 'all' ? 'summaryCard active' : 'summaryCard'} onClick={() => setStageFilter('all')}><span>1</span><strong>Clientes cadastrados</strong><em>{visibleClients.length}</em></button>
-        {orderGroups.map((group, index) => <button type="button" className={stageFilter === group.id ? 'summaryCard clickable active' : 'summaryCard clickable'} key={group.id} onClick={() => setStageFilter(group.id)}><span>{index + 2}</span><strong>{group.title}</strong><em>{group.tasks.length}</em></button>)}
+        <button type="button" className={stageFilter === 'all' ? 'summaryCard active' : 'summaryCard'} onClick={() => setStageFilter('all')}><strong>Clientes cadastrados</strong><em>{visibleClients.length}</em></button>
+        {orderGroups.map((group) => <button type="button" className={stageFilter === group.id ? 'summaryCard clickable active' : 'summaryCard clickable'} key={group.id} onClick={() => setStageFilter(group.id)}><strong>{group.title}</strong><em>{group.tasks.length}</em></button>)}
       </section>
 
       <section className="clientGrid activeClients">
-        {visibleClients.map((client) => (
+        {searchedClients.map((client) => (
           <ClientCard
             key={client.id}
             client={client}
@@ -573,7 +583,7 @@ function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, o
             onOpen={() => openClient(client)}
           />
         ))}
-        {!visibleClients.length && <p className="emptyState">Nenhum cliente cadastrado.</p>}
+        {!searchedClients.length && <p className="emptyState">Nenhum cliente encontrado.</p>}
       </section>
 
       <section className="orderStageGrid">
@@ -591,11 +601,16 @@ function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, o
 
 function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, showTaskForm, onCloseTaskForm, onCreate, onComplete, onUpdateStatus, onSaveComment }) {
   const [ownerFilter, setOwnerFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('');
   const [form, setForm] = useState({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId: currentProfile?.id ?? '', attachmentUrl: '', attachmentName: '' });
   const canManageAll = profile.id === 'manager';
   const assignableProfiles = canManageAll ? teamProfiles : teamProfiles.filter((item) => item.id === currentProfile?.id);
   const defaultAssignedId = form.assignedId || currentProfile?.id || assignableProfiles[0]?.id || '';
-  const filteredTasks = personalTasks.filter((task) => canManageAll && ownerFilter !== 'all' ? task.assignedId === ownerFilter : true);
+  const filteredTasks = personalTasks.filter((task) => {
+    const matchesOwner = canManageAll && ownerFilter !== 'all' ? task.assignedId === ownerFilter : true;
+    const matchesDate = dateFilter ? task.dueDate === dateFilter : true;
+    return matchesOwner && matchesDate;
+  });
   const columns = buildAgendaColumns(filteredTasks);
 
   function updateForm(field, value) {
@@ -631,13 +646,17 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
         </div>
       )}
 
-      {canManageAll && (
-        <section className="agendaFilter">
-          <span>Ver agenda</span>
-          <button type="button" className={ownerFilter === 'all' ? 'active' : ''} onClick={() => setOwnerFilter('all')}>Todos</button>
-          {teamProfiles.map((item) => <button type="button" key={item.id} className={ownerFilter === item.id ? 'active' : ''} onClick={() => setOwnerFilter(item.id)}>{item.name}</button>)}
-        </section>
-      )}
+      <section className="agendaControls">
+        <label>Calendario<input type="date" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} /></label>
+        {dateFilter && <button type="button" onClick={() => setDateFilter('')}>Limpar data</button>}
+        {canManageAll && (
+          <div className="agendaFilter">
+            <span>Ver agenda</span>
+            <button type="button" className={ownerFilter === 'all' ? 'active' : ''} onClick={() => setOwnerFilter('all')}>Todos</button>
+            {teamProfiles.map((item) => <button type="button" key={item.id} className={ownerFilter === item.id ? 'active' : ''} onClick={() => setOwnerFilter(item.id)}>{item.name}</button>)}
+          </div>
+        )}
+      </section>
 
       <div className="agendaColumns coloredColumns">
         {columns.map((column) => (
