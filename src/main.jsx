@@ -558,12 +558,12 @@ function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, o
   return (
     <section className="clientWorkspaceClean">
       <section className="clientSummaryGrid">
-        <button type="button" className={stageFilter === 'all' ? 'summaryCard active' : 'summaryCard'} onClick={() => setStageFilter('all')}><span>1</span><strong>Clientes com atividades</strong><em>{clientsWithOpenTasks.length}</em></button>
+        <button type="button" className={stageFilter === 'all' ? 'summaryCard active' : 'summaryCard'} onClick={() => setStageFilter('all')}><span>1</span><strong>Clientes cadastrados</strong><em>{visibleClients.length}</em></button>
         {orderGroups.map((group, index) => <button type="button" className={stageFilter === group.id ? 'summaryCard clickable active' : 'summaryCard clickable'} key={group.id} onClick={() => setStageFilter(group.id)}><span>{index + 2}</span><strong>{group.title}</strong><em>{group.tasks.length}</em></button>)}
       </section>
 
       <section className="clientGrid activeClients">
-        {clientsWithOpenTasks.map((client) => (
+        {visibleClients.map((client) => (
           <ClientCard
             key={client.id}
             client={client}
@@ -573,7 +573,7 @@ function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, o
             onOpen={() => openClient(client)}
           />
         ))}
-        {!clientsWithOpenTasks.length && <p className="emptyState">Nenhum cliente com atividade aberta.</p>}
+        {!visibleClients.length && <p className="emptyState">Nenhum cliente cadastrado.</p>}
       </section>
 
       <section className="orderStageGrid">
@@ -656,8 +656,8 @@ function buildAgendaColumns(tasks) {
   const notDone = tasks.filter((task) => task.status !== 'Concluida');
   return [
     { id: 'new', label: 'Novas', tasks: notDone.filter((task) => task.status === 'A fazer' && !isOverdue(task)) },
-    { id: 'late', label: 'Atrasadas', tasks: notDone.filter(isOverdue) },
     { id: 'doing', label: 'Em andamento', tasks: notDone.filter((task) => task.status === 'Em andamento' && !isOverdue(task)) },
+    { id: 'late', label: 'Atrasadas', tasks: notDone.filter(isOverdue) },
     { id: 'done', label: 'Finalizadas', tasks: tasks.filter((task) => task.status === 'Concluida') }
   ];
 }
@@ -843,6 +843,16 @@ function OrderRow({ task, onOpen }) {
 
 function OrderDetailPage({ task, client, teamProfiles, onBack, onClose, onComplete }) {
   const [nextProfileId, setNextProfileId] = useState(task.nextProfileId || '');
+  const [forwarding, setForwarding] = useState(false);
+
+  async function handleForward() {
+    setForwarding(true);
+    try {
+      await onComplete(task.id, nextProfileId);
+    } finally {
+      setForwarding(false);
+    }
+  }
 
   return (
     <section className="detailPage">
@@ -868,7 +878,7 @@ function OrderDetailPage({ task, client, teamProfiles, onBack, onClose, onComple
         </main>
 
         <aside className="detailSide">
-          <section className="detailBlock"><h2>Encaminhamento</h2><label className="statusControl">Proximo responsavel<select value={nextProfileId} onChange={(event) => setNextProfileId(event.target.value)}><option value="">Entrega/final</option>{teamProfiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><button className="primary wideButton" onClick={() => onComplete(task.id, nextProfileId)}>{nextProfileId ? 'Passar para proximo' : 'Encaminhar para entrega'}</button></section>
+          <section className="detailBlock"><h2>Encaminhamento</h2><label className="statusControl">Proximo responsavel<select value={nextProfileId} onChange={(event) => setNextProfileId(event.target.value)}><option value="">Entrega/final</option>{teamProfiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><button type="button" className="primary wideButton" disabled={forwarding} onClick={handleForward}>{forwarding ? 'Salvando...' : nextProfileId ? 'Passar para proximo' : 'Encaminhar para entrega'}</button></section>
           <section className="detailBlock"><h2>Cliente</h2><p className="listLine"><strong>{client.name}</strong><span>{client.clientCode || client.segment}</span></p><p className="listLine"><strong>CNPJ</strong><span>{client.cnpj || 'Nao informado'}</span></p></section>
         </aside>
       </div>

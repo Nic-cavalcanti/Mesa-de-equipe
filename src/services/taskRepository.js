@@ -53,10 +53,24 @@ async function createAgendaEntryFromClientTask(task, assignedId, createdBy, acti
   const title = task.title || 'Atividade do pedido';
   const restriction = task.restrictionStatus || task.restriction_status || 'Sem restricoes';
   const notes = task.notes || '';
+  const agendaTitle = `Pedido ${orderLabel} - ${title}`;
+  const agendaDescription = `${action}. Status: ${restriction}.`;
+
+  const { data: existing, error: lookupError } = await supabase
+    .from('personal_tasks')
+    .select('id')
+    .eq('assigned_profile_id', assignedId)
+    .eq('title', agendaTitle)
+    .eq('description', agendaDescription)
+    .neq('status', 'Concluida')
+    .limit(1);
+
+  if (lookupError) throw lookupError;
+  if (existing?.length) return;
 
   const { error } = await supabase.from('personal_tasks').insert({
-    title: `Pedido ${orderLabel} - ${title}`,
-    description: `${action}. Status: ${restriction}.`,
+    title: agendaTitle,
+    description: agendaDescription,
     comments: notes || null,
     priority: task.priority || 'Media',
     attachment_name: task.attachmentName || task.attachment_name || null,
