@@ -24,6 +24,18 @@ function mapPersonalTask(row) {
   };
 }
 
+function mapClientTaskEvent(row) {
+  return {
+    id: row.id,
+    taskId: row.client_task_id,
+    type: row.event_type,
+    description: row.description,
+    comment: row.comment ?? '',
+    authorName: row.created_by_profile?.full_name ?? 'Sistema',
+    createdAt: row.created_at
+  };
+}
+
 function mapClientTask(row) {
   return {
     id: row.id,
@@ -44,6 +56,20 @@ function mapClientTask(row) {
     assignedName: row.assigned_profile?.full_name ?? 'Equipe',
     nextProfileName: row.next_profile?.full_name ?? ''
   };
+}
+
+async function recordClientTaskEvent(taskId, eventType, description, createdBy, comment = null) {
+  if (!taskId) return;
+
+  const { error } = await supabase.from('client_task_events').insert({
+    client_task_id: taskId,
+    event_type: eventType,
+    description,
+    comment: comment || null,
+    created_by: createdBy || null
+  });
+
+  if (error) throw error;
 }
 
 async function createAgendaEntryFromClientTask(task, assignedId, createdBy, action = 'Pedido encaminhado') {
@@ -163,6 +189,8 @@ export async function createClientTask(task) {
 
   if (error) throw error;
 
+  await recordClientTaskEvent(data.id, 'criado', `Pedido ${data.order_number || 'sem numero'} criado`, task.createdBy, task.notes || null);
+
   await createAgendaEntryFromClientTask({
     ...data,
     orderNumber: data.order_number,
@@ -206,7 +234,10 @@ export async function completeClientTask(id, nextProfileId = null) {
   if (error) throw error;
 
   if (nextProfileId) {
+    await recordClientTaskEvent(id, 'encaminhado', 'Pedido passado para o proximo responsavel', userData.user.id);
     await createAgendaEntryFromClientTask(currentTask, nextProfileId, userData.user.id, 'Pedido passado para sua etapa');
+  } else {
+    await recordClientTaskEvent(id, 'finalizado', 'Pedido encaminhado para entrega/finalizado', userData.user.id);
   }
 }
 
@@ -220,4 +251,52 @@ export async function loadClientTasks() {
 
   if (error) throw error;
   return data.map(mapClientTask);
+}
+
+
+export async function loadClientTaskEvents() {
+  if (!isSupabaseConfigured) return [];
+
+  const { data, error } = await supabase
+    .from('client_task_events')
+    .select('id, client_task_id, event_type, description, comment, created_at, created_by_profile:profiles!client_task_events_created_by_fkey(full_name)')
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return data.map(mapClientTaskEvent);
+}
+
+export async function addClientTaskComment(taskId, comment) {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+
+  await recordClientTaskEvent(taskId, 'comentario', 'Comentario adicionado', userData.user.id, comment);
+}
+
+export async function applyClientTaskAction(taskId, action) {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+
+  const actions = {
+    payment_confirmed: { restriction_status: 'Sem restricoes', current_step: 'Pagamento confirmado', description: 'Pagamento confirmado' },
+    billing_released: { restriction_status: 'Sem restricoes', current_step: 'Faturamento liberado', description: 'Faturamento liberado' },
+    waiting_transfer_nf: { restriction_status: 'Aguardando NF de transferencia', current_step: 'Aguardando NF de transferencia', description: 'Marcado como aguardando NF de transferencia' },
+    hold_delivery: { restriction_status: 'Nao entregar', current_step: 'Entrega bloqueada', description: 'Entrega marcada como nao liberada' }
+  };
+
+  const selected = actions[action];
+  if (!selected) return;
+
+  const { error } = await supabase
+    .from('client_tasks')
+    .update({
+      restriction_status: selected.restriction_status,
+      current_step: selected.current_step,
+      status: 'Em andamento'
+    })
+    .eq('id', taskId);
+
+  if (error) throw error;
+
+  await recordClientTaskEvent(taskId, 'acao', selected.description, userData.user.id);
 }

@@ -5,7 +5,7 @@ import { clients as fallbackClients, team } from './data.js';
 import { isSupabaseConfigured } from './lib/supabase.js';
 import { getInitialSession, listenToAuthChanges, loadCurrentProfile, signInWithPassword, signOut } from './services/authRepository.js';
 import { createClientRecord, loadClientsFromDatabase } from './services/clientRepository.js';
-import { addPersonalTaskComment, completeClientTask, completePersonalTask, createClientTask, createPersonalTask, loadClientTasks, loadPersonalTasks, loadTeamProfiles, updatePersonalTaskStatus } from './services/taskRepository.js';
+import { addClientTaskComment, addPersonalTaskComment, applyClientTaskAction, completeClientTask, completePersonalTask, createClientTask, createPersonalTask, loadClientTaskEvents, loadClientTasks, loadPersonalTasks, loadTeamProfiles, updatePersonalTaskStatus } from './services/taskRepository.js';
 import './styles.css';
 
 const profilePermissions = {
@@ -74,6 +74,7 @@ function App() {
   const [teamProfiles, setTeamProfiles] = useState([]);
   const [personalTasks, setPersonalTasks] = useState([]);
   const [clientTasks, setClientTasks] = useState([]);
+  const [clientTaskEvents, setClientTaskEvents] = useState([]);
   const [taskError, setTaskError] = useState(null);
   const [dbClients, setDbClients] = useState(null);
   const [dataSource, setDataSource] = useState('demo');
@@ -101,6 +102,8 @@ function App() {
   const selected = appClients.find((client) => client.id === selectedId) ?? appClients[0] ?? fallbackClients[0];
   const selectedClientTasks = clientTasks.filter((task) => task.clientId === selected?.id);
   const selectedOrderTask = clientTasks.find((task) => task.id === selectedTaskId) ?? null;
+  const selectedOrderEvents = clientTaskEvents.filter((event) => event.taskId === selectedTaskId);
+  const myOpenActivities = currentProfile ? personalTasks.filter((task) => task.assignedId === currentProfile.id && task.status !== 'Concluida').length : 0;
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -125,6 +128,7 @@ function App() {
       setTeamProfiles([]);
       setPersonalTasks([]);
       setClientTasks([]);
+      setClientTaskEvents([]);
     });
 
     return () => {
@@ -173,12 +177,13 @@ function App() {
 
     let active = true;
 
-    Promise.all([loadTeamProfiles(), loadPersonalTasks(), loadClientTasks()])
-      .then(([profiles, tasks, clientTaskRows]) => {
+    Promise.all([loadTeamProfiles(), loadPersonalTasks(), loadClientTasks(), loadClientTaskEvents()])
+      .then(([profiles, tasks, clientTaskRows, eventRows]) => {
         if (!active) return;
         setTeamProfiles(profiles);
         setPersonalTasks(tasks);
         setClientTasks(clientTaskRows);
+        setClientTaskEvents(eventRows);
       })
       .catch((error) => {
         if (active) setTaskError(explainAuthError(error));
@@ -198,9 +203,10 @@ function App() {
 
   async function refreshTasks() {
     if (!isSupabaseConfigured) return;
-    const [tasks, clientTaskRows] = await Promise.all([loadPersonalTasks(), loadClientTasks()]);
+    const [tasks, clientTaskRows, eventRows] = await Promise.all([loadPersonalTasks(), loadClientTasks(), loadClientTaskEvents()]);
     setPersonalTasks(tasks);
     setClientTasks(clientTaskRows);
+    setClientTaskEvents(eventRows);
   }
 
   async function handleCreateClient(client) {
@@ -244,6 +250,16 @@ function App() {
     await completeClientTask(id, nextProfileId);
     await refreshTasks();
     if (!nextProfileId) closeDetail();
+  }
+
+  async function handleAddClientTaskComment(id, comment) {
+    await addClientTaskComment(id, comment);
+    await refreshTasks();
+  }
+
+  async function handleApplyClientTaskAction(id, action) {
+    await applyClientTaskAction(id, action);
+    await refreshTasks();
   }
 
   function openClient(client) {
@@ -356,9 +372,9 @@ function App() {
         <header className="topbar">
           <div><p>Bom dia, {profile.user.split(' ')[0]}!</p><h1>{title}</h1></div>
           <div className="actions">
-            <button className="bell"><Bell size={18} /><span>3</span></button>
+            <button className="bell" type="button" onClick={() => setRoute('agenda')}><Bell size={18} /><span>{myOpenActivities}</span></button>
             {route === 'agenda' && <button className="primary" onClick={() => setShowTaskForm(true)}>+ Nova atividade</button>}
-            {route === 'clients' && <button className="primary" onClick={() => setShowClientForm((current) => !current)}>+ Novo cliente</button>}
+            {route === 'clients' && profile.id === 'manager' && <button className="primary" onClick={() => setShowClientForm((current) => !current)}>+ Novo cliente</button>}
           </div>
         </header>
 
@@ -401,8 +417,11 @@ function App() {
         teamProfiles={teamProfiles}
         onCreateClientTask={handleCreateClientTask}
         selectedTask={selectedOrderTask}
+        selectedTaskEvents={selectedOrderEvents}
         onOpenTask={setSelectedTaskId}
         onCompleteClientTask={handleCompleteClientTask}
+        onAddClientTaskComment={handleAddClientTaskComment}
+        onApplyClientTaskAction={handleApplyClientTaskAction}
         open={drawerOpen}
         onClose={closeDetail}
       />
@@ -425,7 +444,7 @@ function MainContent({ route, metrics, filter, setFilter, visibleClients, select
   }
 
   if (route === 'reports') {
-    return <ReportsView metrics={metrics} clientTasks={clientTasks} personalTasks={personalTasks} clients={visibleClients} />;
+    return <ReportsView metrics={metrics} clientTasks={clientTasks} personalTasks={personalTasks} clients={visibleClients} teamProfiles={teamProfiles} />;
   }
 
   if (route === 'home') {
@@ -494,10 +513,16 @@ function CalendarView({ personalTasks, clientTasks }) {
   );
 }
 
-function ReportsView({ metrics, clientTasks, personalTasks, clients }) {
-  const blockedOrders = clientTasks.filter((task) => task.restrictionStatus && task.restrictionStatus !== 'Sem restricoes');
+function ReportsView({ metrics, clientTasks, personalTasks, clients, teamProfiles }) {
+  const blockedOrders = clientTasks.filter((task) => task.restrictionStatus && task.restrictionStatus !== 'Sem restricoes' && task.status !== 'Concluida');
   const doneOrders = clientTasks.filter((task) => task.status === 'Concluida');
   const openPersonal = personalTasks.filter((task) => task.status !== 'Concluida');
+  const openClientTasks = clientTasks.filter((task) => task.status !== 'Concluida');
+  const workload = teamProfiles.map((member) => ({
+    ...member,
+    personal: openPersonal.filter((task) => task.assignedId === member.id).length,
+    orders: openClientTasks.filter((task) => task.assignedId === member.id).length
+  }));
 
   return (
     <section className="routeSurface">
@@ -507,6 +532,10 @@ function ReportsView({ metrics, clientTasks, personalTasks, clients }) {
         <article><h2>Pedidos finalizados</h2><strong className="largeNumber">{doneOrders.length}</strong><span>no fluxo</span></article>
         <article><h2>Atividades abertas</h2><strong className="largeNumber">{openPersonal.length}</strong><span>na agenda</span></article>
         <article><h2>Clientes cadastrados</h2><strong className="largeNumber">{clients.length}</strong><span>ativos na base</span></article>
+      </div>
+      <div className="reportGrid operationalGrid">
+        <article><h2>Carga por colaborador</h2>{workload.map((item) => <p className="listLine" key={item.id}><strong>{item.name}</strong><span>{item.personal + item.orders} pendencias</span></p>)}{!workload.length && <p className="emptyState">Equipe ainda nao carregada.</p>}</article>
+        <article><h2>Pedidos parados</h2>{openClientTasks.slice(0, 6).map((task) => <p className="listLine" key={task.id}><strong>{task.clientName}</strong><span>{task.assignedName}</span></p>)}{!openClientTasks.length && <p className="emptyState">Nenhum pedido aberto.</p>}</article>
       </div>
     </section>
   );
@@ -836,12 +865,12 @@ function LoadRow({ member }) {
   return <div className="loadRow"><span>{member.name}</span><div><i style={{ width: member.load + '%' }} /></div><strong>{member.load}%</strong></div>;
 }
 
-function ClientPanel({ client, profile, clientTasks, teamProfiles, onCreateClientTask, selectedTask, onOpenTask, onCompleteClientTask, open, onClose }) {
+function ClientPanel({ client, profile, clientTasks, teamProfiles, onCreateClientTask, selectedTask, selectedTaskEvents, onOpenTask, onCompleteClientTask, onAddClientTaskComment, onApplyClientTaskAction, open, onClose }) {
   const visibleFlags = getVisibleFlags(client, profile);
   if (!open) return null;
 
   if (selectedTask) {
-    return <OrderDetailPage task={selectedTask} client={client} teamProfiles={teamProfiles} onBack={() => onOpenTask(null)} onClose={onClose} onComplete={onCompleteClientTask} />;
+    return <OrderDetailPage task={selectedTask} client={client} teamProfiles={teamProfiles} events={selectedTaskEvents} onBack={() => onOpenTask(null)} onClose={onClose} onComplete={onCompleteClientTask} onAddComment={onAddClientTaskComment} onApplyAction={onApplyClientTaskAction} />;
   }
 
   return (
@@ -890,14 +919,43 @@ function OrderRow({ task, onOpen }) {
   );
 }
 
-function OrderDetailPage({ task, client, teamProfiles, onBack, onClose, onComplete }) {
+function OrderDetailPage({ task, client, teamProfiles, events, onBack, onClose, onComplete, onAddComment, onApplyAction }) {
   const [nextProfileId, setNextProfileId] = useState(task.nextProfileId || '');
   const [forwarding, setForwarding] = useState(false);
+  const [comment, setComment] = useState('');
+  const [savingComment, setSavingComment] = useState(false);
+  const actionButtons = [
+    ['payment_confirmed', 'Confirmar pagamento'],
+    ['billing_released', 'Liberar faturamento'],
+    ['waiting_transfer_nf', 'Aguardar NF transferencia'],
+    ['hold_delivery', 'Bloquear entrega']
+  ];
 
   async function handleForward() {
     setForwarding(true);
     try {
       await onComplete(task.id, nextProfileId);
+    } finally {
+      setForwarding(false);
+    }
+  }
+
+  async function submitComment(event) {
+    event.preventDefault();
+    if (!comment.trim()) return;
+    setSavingComment(true);
+    try {
+      await onAddComment(task.id, comment.trim());
+      setComment('');
+    } finally {
+      setSavingComment(false);
+    }
+  }
+
+  async function applyAction(action) {
+    setForwarding(true);
+    try {
+      await onApplyAction(task.id, action);
     } finally {
       setForwarding(false);
     }
@@ -919,10 +977,22 @@ function OrderDetailPage({ task, client, teamProfiles, onBack, onClose, onComple
             {task.attachmentUrl && <a className="attachmentLink" href={task.attachmentUrl} target="_blank" rel="noreferrer">{task.attachmentName || 'Abrir anexo'}</a>}
           </section>
 
+          <section className="detailBlock">
+            <h2>Acoes rapidas</h2>
+            <div className="guidedActions">
+              {actionButtons.map(([id, label]) => <button type="button" key={id} disabled={forwarding} onClick={() => applyAction(id)}>{label}</button>)}
+            </div>
+          </section>
+
           <section className="detailBlock conversationBlock">
             <h2>Historico e comentarios</h2>
-            <div className="messageBubble"><strong>{task.assignedName}</strong><p>{task.notes || 'Pedido criado para acompanhamento operacional.'}</p></div>
-            {task.status === 'Concluida' && <div className="messageBubble successBubble"><strong>Sistema</strong><p>Pedido encaminhado para entrega/finalizado.</p></div>}
+            <form className="orderCommentForm" onSubmit={submitComment}>
+              <textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Escreva uma atualizacao sobre este pedido" />
+              <button className="primary" disabled={savingComment}>{savingComment ? 'Enviando...' : 'Adicionar comentario'}</button>
+            </form>
+            <div className="eventTimeline">
+              {events.length ? events.map((event) => <EventItem key={event.id} event={event} />) : <p className="emptyState">O historico deste pedido comeca nas proximas movimentacoes.</p>}
+            </div>
           </section>
         </main>
 
@@ -932,6 +1002,16 @@ function OrderDetailPage({ task, client, teamProfiles, onBack, onClose, onComple
         </aside>
       </div>
     </section>
+  );
+}
+
+function EventItem({ event }) {
+  const date = event.createdAt ? new Date(event.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+  return (
+    <article className={'eventItem ' + event.type}>
+      <div><strong>{event.description}</strong><span>{event.authorName} · {date}</span></div>
+      {event.comment && <p>{event.comment}</p>}
+    </article>
   );
 }
 

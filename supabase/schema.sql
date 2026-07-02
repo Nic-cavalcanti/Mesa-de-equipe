@@ -166,6 +166,16 @@ create table if not exists client_tasks (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists client_task_events (
+  id uuid primary key default gen_random_uuid(),
+  client_task_id uuid not null references client_tasks(id) on delete cascade,
+  event_type text not null default 'historico',
+  description text not null,
+  comment text,
+  created_by uuid references profiles(id),
+  created_at timestamptz not null default now()
+);
+
 alter table client_tasks add column if not exists order_number text;
 alter table client_tasks add column if not exists next_profile_id uuid references profiles(id);
 alter table client_tasks add column if not exists restriction_status client_task_restriction not null default 'Sem restricoes';
@@ -208,6 +218,7 @@ alter table orders enable row level security;
 alter table client_history enable row level security;
 alter table personal_tasks enable row level security;
 alter table client_tasks enable row level security;
+alter table client_task_events enable row level security;
 
 create or replace function get_app_user_role()
 returns app_role as $$
@@ -232,6 +243,8 @@ drop policy if exists "history insert authenticated" on client_history;
 drop policy if exists "personal tasks private read" on personal_tasks;
 drop policy if exists "personal tasks private write" on personal_tasks;
 drop policy if exists "client tasks shared read" on client_tasks;
+drop policy if exists "client task events shared read" on client_task_events;
+drop policy if exists "client task events shared write" on client_task_events;
 drop policy if exists "client tasks shared write" on client_tasks;
 
 create policy "profiles can read own profile" on profiles for select using (id = auth.uid());
@@ -279,3 +292,5 @@ create policy "personal tasks private write" on personal_tasks for all using (
 
 create policy "client tasks shared read" on client_tasks for select using (auth.uid() is not null);
 create policy "client tasks shared write" on client_tasks for all using (auth.uid() is not null) with check (auth.uid() is not null);
+create policy "client task events shared read" on client_task_events for select using (auth.uid() is not null);
+create policy "client task events shared write" on client_task_events for insert with check (auth.uid() is not null);
