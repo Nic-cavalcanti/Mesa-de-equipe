@@ -468,9 +468,9 @@ function OrderCard({ task, done, onOpen }) {
   return (
     <button className={done ? 'orderCard done' : 'orderCard'} onClick={onOpen}>
       <span>Pedido {task.orderNumber || '-'}</span>
-      <strong>{task.title}</strong>
-      <small>{task.clientName} - {task.restrictionStatus}</small>
-      <em>{task.assignedName}{task.nextProfileName ? ' -> ' + task.nextProfileName : ''}</em>
+      <strong>{task.clientName}</strong>
+      <small>{task.title}</small>
+      <em>{task.restrictionStatus} · {task.assignedName}{task.nextProfileName ? ' -> ' + task.nextProfileName : ''}</em>
     </button>
   );
 }
@@ -552,7 +552,6 @@ function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, o
     if (!normalizedSearch) return true;
     return [client.name, client.clientCode, client.cnpj].filter(Boolean).join(' ').toLowerCase().includes(normalizedSearch);
   });
-  const clientsWithOpenTasks = visibleClients.filter((client) => openTasks.some((task) => task.clientId === client.id));
   const orderGroups = [
     { id: 'pay', title: 'Aguardando pagamento', tasks: openTasks.filter((task) => task.restrictionStatus === 'Aguardando pagamento') },
     { id: 'delivery', title: 'Entrega nao liberada', tasks: openTasks.filter((task) => task.restrictionStatus === 'Nao entregar' || task.restrictionStatus === 'Nao faturar') },
@@ -572,20 +571,6 @@ function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, o
         {orderGroups.map((group) => <button type="button" className={stageFilter === group.id ? 'summaryCard clickable active' : 'summaryCard clickable'} key={group.id} onClick={() => setStageFilter(group.id)}><strong>{group.title}</strong><em>{group.tasks.length}</em></button>)}
       </section>
 
-      <section className="clientGrid activeClients">
-        {searchedClients.map((client) => (
-          <ClientCard
-            key={client.id}
-            client={client}
-            profile={profile}
-            selected={client.id === selectedId}
-            onSelect={() => setSelectedId(client.id)}
-            onOpen={() => openClient(client)}
-          />
-        ))}
-        {!searchedClients.length && <p className="emptyState">Nenhum cliente encontrado.</p>}
-      </section>
-
       <section className="orderStageGrid">
         {visibleOrderGroups.map((group) => (
           <article key={group.id}>
@@ -594,6 +579,23 @@ function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, o
             {!group.tasks.length && <p className="emptyState">Nada nesta etapa.</p>}
           </article>
         ))}
+      </section>
+
+      <section className="clientListPanel">
+        <div className="sectionTitle compact"><div><h2>Clientes</h2><p>Lista para localizar por nome, ID ou CNPJ e abrir o cadastro.</p></div><strong>{searchedClients.length}</strong></div>
+        <div className="clientList">
+          {searchedClients.map((client) => (
+            <ClientListRow
+              key={client.id}
+              client={client}
+              profile={profile}
+              selected={client.id === selectedId}
+              onSelect={() => setSelectedId(client.id)}
+              onOpen={() => openClient(client)}
+            />
+          ))}
+          {!searchedClients.length && <p className="emptyState">Nenhum cliente encontrado.</p>}
+        </div>
       </section>
     </section>
   );
@@ -780,6 +782,20 @@ function LoginScreen({ error, onError }) {
 function Metric({ metric }) {
   const Icon = metric.icon;
   return <article className="metric"><Icon className={metric.tone ?? ''} size={24} /><strong>{metric.value}</strong><span>{metric.label}</span><small>{metric.hint}</small></article>;
+}
+
+function ClientListRow({ client, profile, selected, onSelect, onOpen }) {
+  const flags = getVisibleFlags(client, profile);
+  const mainFlag = flags[0] || 'Sem restricoes';
+
+  return (
+    <button type="button" className={selected ? 'clientListRow selected' : 'clientListRow'} onClick={() => { onSelect(); onOpen(); }}>
+      <span>{client.clientCode || 'Sem ID'}</span>
+      <strong>{client.name}</strong>
+      <em>{client.cnpj || 'CNPJ nao informado'}</em>
+      <small>{client.priority} · {client.health} · {mainFlag}</small>
+    </button>
+  );
 }
 
 function ClientCard({ client, profile, selected, onSelect, onOpen }) {
