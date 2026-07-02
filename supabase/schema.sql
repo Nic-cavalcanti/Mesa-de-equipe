@@ -303,19 +303,9 @@ create policy "personal tasks private write" on personal_tasks for all using (
   or get_app_user_role() = 'manager'
 );
 
-create policy "personal task participants read" on personal_task_participants for select using (
-  profile_id = auth.uid()
-  or get_app_user_role() = 'manager'
-  or exists (select 1 from personal_tasks t where t.id = personal_task_id and (t.assigned_profile_id = auth.uid() or t.created_by = auth.uid()))
-);
+create policy "personal task participants read" on personal_task_participants for select using (auth.uid() is not null);
 
-create policy "personal task participants write" on personal_task_participants for all using (
-  get_app_user_role() = 'manager'
-  or exists (select 1 from personal_tasks t where t.id = personal_task_id and (t.assigned_profile_id = auth.uid() or t.created_by = auth.uid()))
-) with check (
-  get_app_user_role() = 'manager'
-  or exists (select 1 from personal_tasks t where t.id = personal_task_id and (t.assigned_profile_id = auth.uid() or t.created_by = auth.uid()))
-);
+create policy "personal task participants write" on personal_task_participants for all using (auth.uid() is not null) with check (auth.uid() is not null);
 
 create policy "client tasks shared read" on client_tasks for select using (auth.uid() is not null);
 create policy "client tasks shared write" on client_tasks for all using (auth.uid() is not null) with check (auth.uid() is not null);
