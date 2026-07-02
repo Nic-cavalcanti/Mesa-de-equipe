@@ -467,9 +467,9 @@ function OrdersView({ clientTasks, openClient, openOrderTask, clients }) {
 function OrderCard({ task, done, onOpen }) {
   return (
     <button className={done ? 'orderCard done' : 'orderCard'} onClick={onOpen}>
-      <span>Pedido {task.orderNumber || '-'}</span>
-      <strong>{task.clientName}</strong>
-      <small>{task.title}</small>
+      <span className="orderClientLabel">Cliente</span>
+      <strong className="orderClientName">{task.clientName || 'Cliente nao informado'}</strong>
+      <small>Pedido {task.orderNumber || '-'} · {task.title}</small>
       <em>{task.restrictionStatus} · {task.assignedName}{task.nextProfileName ? ' -> ' + task.nextProfileName : ''}</em>
     </button>
   );
@@ -707,18 +707,21 @@ function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment
   const [comment, setComment] = useState(task.comments ?? '');
   const [savingComment, setSavingComment] = useState(false);
   const [savedComment, setSavedComment] = useState(false);
+  const [commentOpen, setCommentOpen] = useState(false);
 
   useEffect(() => {
     setComment(task.comments ?? '');
     setSavedComment(false);
   }, [task.id, task.comments]);
 
-  async function saveComment() {
+  async function saveComment(event) {
+    event.preventDefault();
     setSavingComment(true);
     setSavedComment(false);
     try {
       await onSaveComment(task.id, comment);
       setSavedComment(true);
+      setCommentOpen(false);
     } finally {
       setSavingComment(false);
     }
@@ -728,11 +731,22 @@ function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment
     <div className={task.status === 'Concluida' ? 'taskCard done' : isOverdue(task) ? 'taskCard overdue' : task.status === 'Em andamento' ? 'taskCard doing' : 'taskCard'}>
       <div><strong>{task.title}</strong><span>{task.assignedName}</span></div>
       {task.description && <p>{task.description}</p>}
+      {task.comments && <p className="commentPreview">{task.comments}</p>}
       {task.attachmentUrl && <a className="attachmentLink" href={task.attachmentUrl} target="_blank" rel="noreferrer">{task.attachmentName || 'Abrir anexo'}</a>}
       <footer><span>{dueText(task)}</span><span>{task.priority}</span></footer>
       {onUpdateStatus && <label className="statusControl">Status<select value={task.status} onChange={(event) => onUpdateStatus(task.id, event.target.value)}><option>A fazer</option><option>Em andamento</option><option>Concluida</option></select></label>}
-      {onSaveComment && <div className="commentArea"><textarea value={comment} onChange={(event) => { setComment(event.target.value); setSavedComment(false); }} placeholder="Comentario da atividade" /><div><span>{savedComment ? 'Comentario salvo' : ''}</span><button type="button" onClick={saveComment} disabled={savingComment}>{savingComment ? 'Salvando...' : 'Comentar'}</button></div></div>}
+      {onSaveComment && <div className="commentActions"><button type="button" onClick={() => setCommentOpen(true)}>{task.comments ? 'Editar comentario' : 'Comentar'}</button>{savedComment && <span>Comentario salvo</span>}</div>}
       {canComplete && task.status !== 'Concluida' && <button type="button" className="completeButton" onClick={onComplete}><CheckCircle2 size={14} />Finalizar</button>}
+
+      {commentOpen && (
+        <div className="modalBackdrop commentBackdrop" onClick={() => setCommentOpen(false)}>
+          <form className="commentModal" onSubmit={saveComment} onClick={(event) => event.stopPropagation()}>
+            <div className="modalHead"><div><h2>Comentario</h2><p>{task.title}</p></div><button type="button" onClick={() => setCommentOpen(false)}><X size={16} /></button></div>
+            <label>Observacao<textarea value={comment} onChange={(event) => { setComment(event.target.value); setSavedComment(false); }} placeholder="Escreva uma observacao sobre esta atividade" autoFocus /></label>
+            <div className="modalActions"><button type="button" onClick={() => setCommentOpen(false)}>Cancelar</button><button className="primary" disabled={savingComment}>{savingComment ? 'Enviando...' : 'Enviar comentario'}</button></div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
