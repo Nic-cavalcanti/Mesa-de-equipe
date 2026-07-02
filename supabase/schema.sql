@@ -166,6 +166,13 @@ create table if not exists client_tasks (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists personal_task_participants (
+  personal_task_id uuid not null references personal_tasks(id) on delete cascade,
+  profile_id uuid not null references profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (personal_task_id, profile_id)
+);
+
 create table if not exists client_task_events (
   id uuid primary key default gen_random_uuid(),
   client_task_id uuid not null references client_tasks(id) on delete cascade,
@@ -217,6 +224,7 @@ alter table processes enable row level security;
 alter table orders enable row level security;
 alter table client_history enable row level security;
 alter table personal_tasks enable row level security;
+alter table personal_task_participants enable row level security;
 alter table client_tasks enable row level security;
 alter table client_task_events enable row level security;
 
@@ -241,6 +249,8 @@ drop policy if exists "process write by manager or owner" on processes;
 drop policy if exists "orders write by manager finance logistics" on orders;
 drop policy if exists "history insert authenticated" on client_history;
 drop policy if exists "personal tasks private read" on personal_tasks;
+drop policy if exists "personal task participants read" on personal_task_participants;
+drop policy if exists "personal task participants write" on personal_task_participants;
 drop policy if exists "personal tasks private write" on personal_tasks;
 drop policy if exists "client tasks shared read" on client_tasks;
 drop policy if exists "client task events shared read" on client_task_events;
@@ -277,17 +287,34 @@ create policy "history insert authenticated" on client_history for insert with c
 
 create policy "personal tasks private read" on personal_tasks for select using (
   assigned_profile_id = auth.uid()
+  or exists (select 1 from personal_task_participants p where p.personal_task_id = id and p.profile_id = auth.uid())
   or get_app_user_role() = 'manager'
 );
 
 create policy "personal tasks private write" on personal_tasks for all using (
   assigned_profile_id = auth.uid()
   or created_by = auth.uid()
+  or exists (select 1 from personal_task_participants p where p.personal_task_id = id and p.profile_id = auth.uid())
   or get_app_user_role() = 'manager'
 ) with check (
   assigned_profile_id = auth.uid()
   or created_by = auth.uid()
+  or exists (select 1 from personal_task_participants p where p.personal_task_id = id and p.profile_id = auth.uid())
   or get_app_user_role() = 'manager'
+);
+
+create policy "personal task participants read" on personal_task_participants for select using (
+  profile_id = auth.uid()
+  or get_app_user_role() = 'manager'
+  or exists (select 1 from personal_tasks t where t.id = personal_task_id and (t.assigned_profile_id = auth.uid() or t.created_by = auth.uid()))
+);
+
+create policy "personal task participants write" on personal_task_participants for all using (
+  get_app_user_role() = 'manager'
+  or exists (select 1 from personal_tasks t where t.id = personal_task_id and (t.assigned_profile_id = auth.uid() or t.created_by = auth.uid()))
+) with check (
+  get_app_user_role() = 'manager'
+  or exists (select 1 from personal_tasks t where t.id = personal_task_id and (t.assigned_profile_id = auth.uid() or t.created_by = auth.uid()))
 );
 
 create policy "client tasks shared read" on client_tasks for select using (auth.uid() is not null);

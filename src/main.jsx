@@ -103,7 +103,7 @@ function App() {
   const selectedClientTasks = clientTasks.filter((task) => task.clientId === selected?.id);
   const selectedOrderTask = clientTasks.find((task) => task.id === selectedTaskId) ?? null;
   const selectedOrderEvents = clientTaskEvents.filter((event) => event.taskId === selectedTaskId);
-  const myOpenActivities = currentProfile ? personalTasks.filter((task) => task.assignedId === currentProfile.id && task.status !== 'Concluida').length : 0;
+  const myOpenActivities = currentProfile ? personalTasks.filter((task) => (task.assignedId === currentProfile.id || task.participants?.some((item) => item.id === currentProfile.id)) && task.status !== 'Concluida').length : 0;
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -633,7 +633,7 @@ function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, o
 function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, showTaskForm, onCloseTaskForm, onCreate, onComplete, onUpdateStatus, onSaveComment }) {
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
-  const [form, setForm] = useState({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId: currentProfile?.id ?? '', attachmentUrl: '', attachmentName: '' });
+  const [form, setForm] = useState({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId: currentProfile?.id ?? '', participantIds: [], attachmentUrl: '', attachmentName: '' });
   const canManageAll = profile.id === 'manager';
   const assignableProfiles = canManageAll ? teamProfiles : teamProfiles.filter((item) => item.id === currentProfile?.id);
   const defaultAssignedId = form.assignedId || currentProfile?.id || assignableProfiles[0]?.id || '';
@@ -648,11 +648,21 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  function toggleParticipant(profileId) {
+    setForm((current) => {
+      const exists = current.participantIds.includes(profileId);
+      return {
+        ...current,
+        participantIds: exists ? current.participantIds.filter((id) => id !== profileId) : [...current.participantIds, profileId]
+      };
+    });
+  }
+
   async function submitTask(event) {
     event.preventDefault();
     const assignedId = canManageAll ? defaultAssignedId : currentProfile.id;
     await onCreate({ ...form, assignedId });
-    setForm({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId, attachmentUrl: '', attachmentName: '' });
+    setForm({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId, participantIds: [], attachmentUrl: '', attachmentName: '' });
     onCloseTaskForm();
   }
 
@@ -672,6 +682,14 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
                 <label>Responsavel<select value={defaultAssignedId} onChange={(event) => updateForm('assignedId', event.target.value)}>{assignableProfiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
               )}
             </div>
+            <fieldset className="participantPicker">
+              <legend>Convidados</legend>
+              <div>
+                {teamProfiles.filter((item) => item.id !== defaultAssignedId).map((item) => (
+                  <label key={item.id}><input type="checkbox" checked={form.participantIds.includes(item.id)} onChange={() => toggleParticipant(item.id)} />{item.name}</label>
+                ))}
+              </div>
+            </fieldset>
             <button className="primary">Criar atividade</button>
           </form>
         </div>
@@ -760,6 +778,7 @@ function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment
     <div className={task.status === 'Concluida' ? 'taskCard done' : isOverdue(task) ? 'taskCard overdue' : task.status === 'Em andamento' ? 'taskCard doing' : 'taskCard'}>
       <div><strong>{task.title}</strong><span>{task.assignedName}</span></div>
       {task.description && <p>{task.description}</p>}
+      {task.participants?.length > 0 && <p className="participantLine">Com: {task.participants.map((item) => item.name).join(', ')}</p>}
       {task.comments && <p className="commentPreview">{task.comments}</p>}
       {task.attachmentUrl && <a className="attachmentLink" href={task.attachmentUrl} target="_blank" rel="noreferrer">{task.attachmentName || 'Abrir anexo'}</a>}
       <footer><span>{dueText(task)}</span><span>{task.priority}</span></footer>

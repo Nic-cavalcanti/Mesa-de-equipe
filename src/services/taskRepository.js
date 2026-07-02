@@ -20,7 +20,11 @@ function mapPersonalTask(row) {
     attachmentName: row.attachment_name ?? '',
     attachmentUrl: row.attachment_url ?? '',
     assignedId: row.assigned_profile_id,
-    assignedName: row.assigned_profile?.full_name ?? 'Sem responsavel'
+    assignedName: row.assigned_profile?.full_name ?? 'Sem responsavel',
+    participants: (row.participants ?? []).map((item) => ({
+      id: item.profile_id,
+      name: item.profile?.full_name ?? 'Convidado'
+    }))
   };
 }
 
@@ -125,7 +129,7 @@ export async function loadPersonalTasks() {
 
   const { data, error } = await supabase
     .from('personal_tasks')
-    .select('id, title, description, comments, due_date, status, priority, attachment_name, attachment_url, assigned_profile_id, assigned_profile:profiles!personal_tasks_assigned_profile_id_fkey(full_name)')
+    .select('id, title, description, comments, due_date, status, priority, attachment_name, attachment_url, assigned_profile_id, assigned_profile:profiles!personal_tasks_assigned_profile_id_fkey(full_name), participants:personal_task_participants(profile_id, profile:profiles!personal_task_participants_profile_id_fkey(full_name))')
     .order('due_date', { ascending: true, nullsFirst: false });
 
   if (error) throw error;
@@ -133,7 +137,7 @@ export async function loadPersonalTasks() {
 }
 
 export async function createPersonalTask(task) {
-  const { error } = await supabase.from('personal_tasks').insert({
+  const { data, error } = await supabase.from('personal_tasks').insert({
     title: task.title,
     description: task.description || null,
     comments: task.comments || null,
@@ -143,9 +147,18 @@ export async function createPersonalTask(task) {
     attachment_url: task.attachmentUrl || null,
     assigned_profile_id: task.assignedId,
     created_by: task.createdBy
-  });
+  }).select('id').single();
 
   if (error) throw error;
+
+  const participantIds = [...new Set(task.participantIds ?? [])].filter((id) => id && id !== task.assignedId);
+  if (participantIds.length) {
+    const { error: participantError } = await supabase.from('personal_task_participants').insert(
+      participantIds.map((profileId) => ({ personal_task_id: data.id, profile_id: profileId }))
+    );
+
+    if (participantError) throw participantError;
+  }
 }
 
 export async function updatePersonalTaskStatus(id, status) {
