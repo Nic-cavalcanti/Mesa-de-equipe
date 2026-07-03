@@ -845,18 +845,17 @@ function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment
   return (
     <div className={task.status === 'Concluida' ? 'taskCard done' : isOverdue(task) ? 'taskCard overdue' : task.status === 'Em andamento' ? 'taskCard doing' : 'taskCard'}>
       <div className="taskCardHead">
-        <div>
-          <strong>{task.title}</strong>
-          <span>{task.assignedName} · {dueText(task)}</span>
-        </div>
-        <small>{task.priority}</small>
+        <strong>{task.title}</strong>
+        <span>Responsavel: {task.assignedName}</span>
+        <span>Prazo: {dueText(task)}</span>
+        <span>Prioridade: {task.priority}</span>
       </div>
 
       <div className="taskCardSummary">
-        <span>{task.status}</span>
-        {task.participants?.length > 0 && <span>Com {task.participants.length}</span>}
-        {task.comments && <span>Comentario</span>}
-        {task.extensionStatus && <span>Prorrogacao</span>}
+        <span>Status: {task.status}</span>
+        {task.participants?.length > 0 && <span>Convidados: {task.participants.length}</span>}
+        {task.comments && <span>Comentario registrado</span>}
+        {task.extensionStatus && <span>Prorrogacao solicitada</span>}
       </div>
 
       <button type="button" className="expandTaskButton" onClick={() => setExpanded((current) => !current)}>
