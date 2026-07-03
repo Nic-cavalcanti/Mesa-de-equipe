@@ -19,6 +19,11 @@ function mapPersonalTask(row) {
     priority: row.priority,
     attachmentName: row.attachment_name ?? '',
     attachmentUrl: row.attachment_url ?? '',
+    extensionDueDate: row.extension_due_date ?? '',
+    extensionReason: row.extension_reason ?? '',
+    extensionStatus: row.extension_status ?? '',
+    extensionRequestedAt: row.extension_requested_at ?? '',
+    extensionRequestedBy: row.extension_requested_by ?? '',
     assignedId: row.assigned_profile_id,
     assignedName: row.assigned_profile?.full_name ?? 'Sem responsavel',
     participants: (row.participants ?? []).map((item) => ({
@@ -137,7 +142,7 @@ export async function loadPersonalTasks() {
 
   const { data, error } = await supabase
     .from('personal_tasks')
-    .select('id, title, description, comments, due_date, status, priority, attachment_name, attachment_url, assigned_profile_id, assigned_profile:profiles!personal_tasks_assigned_profile_id_fkey(full_name), participants:personal_task_participants(profile_id, profile:profiles!personal_task_participants_profile_id_fkey(full_name))')
+    .select('id, title, description, comments, due_date, status, priority, attachment_name, attachment_url, extension_due_date, extension_reason, extension_status, extension_requested_at, extension_requested_by, assigned_profile_id, assigned_profile:profiles!personal_tasks_assigned_profile_id_fkey(full_name), participants:personal_task_participants(profile_id, profile:profiles!personal_task_participants_profile_id_fkey(full_name))')
     .order('due_date', { ascending: true, nullsFirst: false });
 
   if (error) throw error;
@@ -182,6 +187,24 @@ export async function addPersonalTaskComment(id, comments) {
   const { error } = await supabase
     .from('personal_tasks')
     .update({ comments })
+    .eq('id', id);
+
+  if (error) throw error;
+}
+
+export async function requestPersonalTaskExtension(id, dueDate, reason) {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+
+  const { error } = await supabase
+    .from('personal_tasks')
+    .update({
+      extension_due_date: dueDate || null,
+      extension_reason: reason || null,
+      extension_status: 'Solicitada',
+      extension_requested_at: new Date().toISOString(),
+      extension_requested_by: userData.user.id
+    })
     .eq('id', id);
 
   if (error) throw error;

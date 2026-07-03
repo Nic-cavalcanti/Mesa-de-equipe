@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertTriangle, Bell, CalendarDays, CheckCircle2, CircleDollarSign, ClipboardList, Eye, EyeOff, FileText, Home, Lock, PackageCheck, Send, ShieldAlert, UsersRound, X } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle2, CircleDollarSign, ClipboardList, Eye, EyeOff, FileText, Home, Lock, PackageCheck, Send, ShieldAlert, UsersRound, X } from 'lucide-react';
 import { clients as fallbackClients, team } from './data.js';
 import { isSupabaseConfigured } from './lib/supabase.js';
 import { getInitialSession, listenToAuthChanges, loadCurrentProfile, signInWithPassword, signOut } from './services/authRepository.js';
 import { createClientRecord, loadClientsFromDatabase } from './services/clientRepository.js';
-import { addClientTaskComment, addPersonalTaskComment, applyClientTaskAction, completeClientTask, completePersonalTask, createClientTask, createPersonalTask, loadClientTaskEvents, loadClientTasks, loadPersonalTasks, loadTeamProfiles, updatePersonalTaskStatus } from './services/taskRepository.js';
+import { addClientTaskComment, addPersonalTaskComment, applyClientTaskAction, completeClientTask, completePersonalTask, createClientTask, createPersonalTask, loadClientTaskEvents, loadClientTasks, loadPersonalTasks, loadTeamProfiles, requestPersonalTaskExtension, updatePersonalTaskStatus } from './services/taskRepository.js';
 import './styles.css';
 
 const profilePermissions = {
@@ -104,7 +104,6 @@ function App() {
   const selectedClientTasks = clientTasks.filter((task) => task.clientId === selected?.id);
   const selectedOrderTask = clientTasks.find((task) => task.id === selectedTaskId) ?? null;
   const selectedOrderEvents = clientTaskEvents.filter((event) => event.taskId === selectedTaskId);
-  const myOpenActivities = currentProfile ? personalTasks.filter((task) => (task.assignedId === currentProfile.id || task.participants?.some((item) => item.id === currentProfile.id)) && task.status !== 'Concluida').length : 0;
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -242,6 +241,17 @@ function App() {
     }
   }
 
+  async function handleRequestPersonalTaskExtension(id, dueDate, reason) {
+    setTaskError(null);
+    try {
+      await requestPersonalTaskExtension(id, dueDate, reason);
+      await refreshTasks();
+    } catch (error) {
+      setTaskError(explainAuthError(error));
+      throw error;
+    }
+  }
+
   async function handleCompletePersonalTask(id) {
     await completePersonalTask(id);
     await refreshTasks();
@@ -369,8 +379,10 @@ function App() {
         </section>
 
         <div className="userCard">
-          <div className="avatar photo">{profile.user.split(' ').map((part) => part[0]).slice(0, 2).join('')}</div>
-          <div><strong>{profile.user}</strong><span>{profile.email || profile.label}</span></div>
+          <div className="userIdentity">
+            <div className="avatar photo">{profile.user.split(' ').map((part) => part[0]).slice(0, 2).join('')}</div>
+            <div><strong>{profile.user}</strong><span>{profile.email || profile.label}</span></div>
+          </div>
           {isSupabaseConfigured && <button className="logoutButton" onClick={() => signOut()}>Sair</button>}
         </div>
       </aside>
@@ -379,7 +391,6 @@ function App() {
         <header className="topbar">
           <div><p>Bom dia, {profile.user.split(' ')[0]}!</p><h1>{title}</h1></div>
           <div className="actions">
-            <button className="bell" type="button" onClick={() => setRoute('agenda')}><Bell size={18} /><span>{myOpenActivities}</span></button>
             {route === 'agenda' && <button className="primary" onClick={() => setShowTaskForm(true)}>+ Nova atividade</button>}
             {route === 'clients' && profile.id === 'manager' && <button className="primary" onClick={() => setShowClientForm((current) => !current)}>+ Novo cliente</button>}
           </div>
@@ -414,6 +425,7 @@ function App() {
           onCompletePersonalTask={handleCompletePersonalTask}
           onUpdatePersonalTaskStatus={handleUpdatePersonalTaskStatus}
           onSavePersonalTaskComment={handleSavePersonalTaskComment}
+          onRequestPersonalTaskExtension={handleRequestPersonalTaskExtension}
         />
       </main>
 
@@ -437,9 +449,9 @@ function App() {
   );
 }
 
-function MainContent({ route, metrics, filter, setFilter, visibleClients, selectedId, setSelectedId, openClient, openOrderTask, profile, currentProfile, teamProfiles, personalTasks, clientTasks, showTaskForm, onCloseTaskForm, onCreatePersonalTask, onCompletePersonalTask, onUpdatePersonalTaskStatus, onSavePersonalTaskComment }) {
+function MainContent({ route, metrics, filter, setFilter, visibleClients, selectedId, setSelectedId, openClient, openOrderTask, profile, currentProfile, teamProfiles, personalTasks, clientTasks, showTaskForm, onCloseTaskForm, onCreatePersonalTask, onCompletePersonalTask, onUpdatePersonalTaskStatus, onSavePersonalTaskComment, onRequestPersonalTaskExtension }) {
   if (route === 'agenda') {
-    return <AgendaView profile={profile} currentProfile={currentProfile} teamProfiles={teamProfiles} personalTasks={personalTasks} showTaskForm={showTaskForm} onCloseTaskForm={onCloseTaskForm} onCreate={onCreatePersonalTask} onComplete={onCompletePersonalTask} onUpdateStatus={onUpdatePersonalTaskStatus} onSaveComment={onSavePersonalTaskComment} />;
+    return <AgendaView profile={profile} currentProfile={currentProfile} teamProfiles={teamProfiles} personalTasks={personalTasks} showTaskForm={showTaskForm} onCloseTaskForm={onCloseTaskForm} onCreate={onCreatePersonalTask} onComplete={onCompletePersonalTask} onUpdateStatus={onUpdatePersonalTaskStatus} onSaveComment={onSavePersonalTaskComment} onRequestExtension={onRequestPersonalTaskExtension} />;
   }
 
   if (route === 'orders') {
@@ -478,7 +490,9 @@ function HomeView({ metrics, clientTasks, personalTasks, clients }) {
 }
 
 function OrdersView({ clientTasks, openClient, openOrderTask, clients }) {
+  const [showCompleted, setShowCompleted] = useState(false);
   const openTasks = clientTasks.filter((task) => task.status !== 'Concluida');
+  const completedTasks = clientTasks.filter((task) => task.status === 'Concluida');
 
   return (
     <section className="routeSurface">
@@ -486,6 +500,18 @@ function OrdersView({ clientTasks, openClient, openOrderTask, clients }) {
       <div className="orderBoard singleBoard">
         <article><h2>Pendentes</h2>{openTasks.map((task) => <OrderCard key={task.id} task={task} onOpen={() => openOrderTask(task)} />)}{!openTasks.length && <p className="emptyState">Nenhum pedido pendente.</p>}</article>
       </div>
+      <section className="completedOrdersBox">
+        <button type="button" onClick={() => setShowCompleted((current) => !current)}>
+          <span>Pedidos concluidos reservados</span>
+          <strong>{completedTasks.length}</strong>
+        </button>
+        {showCompleted && (
+          <div className="completedOrdersList">
+            {completedTasks.map((task) => <OrderCard key={task.id} task={task} done onOpen={() => openOrderTask(task)} />)}
+            {!completedTasks.length && <p className="emptyState">Nenhum pedido concluido ainda.</p>}
+          </div>
+        )}
+      </section>
     </section>
   );
 }
@@ -645,7 +671,7 @@ function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, o
   );
 }
 
-function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, showTaskForm, onCloseTaskForm, onCreate, onComplete, onUpdateStatus, onSaveComment }) {
+function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, showTaskForm, onCloseTaskForm, onCreate, onComplete, onUpdateStatus, onSaveComment, onRequestExtension }) {
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
   const [form, setForm] = useState({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId: currentProfile?.id ?? '', participantIds: [], attachmentUrl: '', attachmentName: '' });
@@ -653,7 +679,8 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
   const assignableProfiles = canManageAll ? teamProfiles : teamProfiles.filter((item) => item.id === currentProfile?.id);
   const defaultAssignedId = form.assignedId || currentProfile?.id || assignableProfiles[0]?.id || '';
   const filteredTasks = personalTasks.filter((task) => {
-    const matchesOwner = canManageAll && ownerFilter !== 'all' ? task.assignedId === ownerFilter : true;
+    const isParticipant = task.participants?.some((item) => item.id === ownerFilter);
+    const matchesOwner = canManageAll && ownerFilter !== 'all' ? task.assignedId === ownerFilter || isParticipant : true;
     const matchesDate = dateFilter ? task.dueDate === dateFilter : true;
     return matchesOwner && matchesDate;
   });
@@ -726,7 +753,7 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
         {columns.map((column) => (
           <article key={column.id} className={'agendaColumn ' + column.id}>
             <h2>{column.label} <span>{column.tasks.length}</span></h2>
-            {column.tasks.map((task) => <TaskCard key={task.id} task={task} canComplete onComplete={() => onComplete(task.id)} onUpdateStatus={onUpdateStatus} onSaveComment={onSaveComment} />)}
+            {column.tasks.map((task) => <TaskCard key={task.id} task={task} canComplete onComplete={() => onComplete(task.id)} onUpdateStatus={onUpdateStatus} onSaveComment={onSaveComment} onRequestExtension={onRequestExtension} />)}
             {!column.tasks.length && <p className="emptyState">Nada por aqui.</p>}
           </article>
         ))}
@@ -765,16 +792,27 @@ function dueText(task) {
   return days + ' dias restantes';
 }
 
-function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment }) {
+function formatDate(value) {
+  if (!value) return '';
+  return new Date(value + 'T00:00:00').toLocaleDateString('pt-BR');
+}
+
+function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment, onRequestExtension }) {
   const [comment, setComment] = useState(task.comments ?? '');
+  const [extensionReason, setExtensionReason] = useState('');
+  const [extensionDueDate, setExtensionDueDate] = useState('');
   const [savingComment, setSavingComment] = useState(false);
+  const [savingExtension, setSavingExtension] = useState(false);
   const [savedComment, setSavedComment] = useState(false);
   const [commentOpen, setCommentOpen] = useState(false);
+  const [extensionOpen, setExtensionOpen] = useState(false);
 
   useEffect(() => {
     setComment(task.comments ?? '');
     setSavedComment(false);
-  }, [task.id, task.comments]);
+    setExtensionReason(task.extensionReason ?? '');
+    setExtensionDueDate(task.extensionDueDate ?? '');
+  }, [task.id, task.comments, task.extensionReason, task.extensionDueDate]);
 
   async function saveComment(event) {
     event.preventDefault();
@@ -789,16 +827,29 @@ function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment
     }
   }
 
+  async function saveExtensionRequest(event) {
+    event.preventDefault();
+    setSavingExtension(true);
+    try {
+      await onRequestExtension(task.id, extensionDueDate, extensionReason);
+      setExtensionOpen(false);
+    } finally {
+      setSavingExtension(false);
+    }
+  }
+
   return (
     <div className={task.status === 'Concluida' ? 'taskCard done' : isOverdue(task) ? 'taskCard overdue' : task.status === 'Em andamento' ? 'taskCard doing' : 'taskCard'}>
       <div><strong>{task.title}</strong><span>{task.assignedName}</span></div>
       {task.description && <p>{task.description}</p>}
       {task.participants?.length > 0 && <p className="participantLine">Com: {task.participants.map((item) => item.name).join(', ')}</p>}
       {task.comments && <p className="commentPreview">{task.comments}</p>}
+      {task.extensionStatus && <p className="extensionNotice">Prorrogacao solicitada{task.extensionDueDate ? ' para ' + formatDate(task.extensionDueDate) : ''}: {task.extensionReason || 'sem justificativa informada'}</p>}
       {task.attachmentUrl && <a className="attachmentLink" href={task.attachmentUrl} target="_blank" rel="noreferrer">{task.attachmentName || 'Abrir anexo'}</a>}
       <footer><span>{dueText(task)}</span><span>{task.priority}</span></footer>
       {onUpdateStatus && <label className="statusControl">Status<select value={task.status} onChange={(event) => onUpdateStatus(task.id, event.target.value)}><option>A fazer</option><option>Em andamento</option><option>Concluida</option></select></label>}
       {onSaveComment && <div className="commentActions"><button type="button" onClick={() => setCommentOpen(true)}>{task.comments ? 'Editar comentario' : 'Comentar'}</button>{savedComment && <span>Comentario salvo</span>}</div>}
+      {onRequestExtension && task.status !== 'Concluida' && <button type="button" className="extensionButton" onClick={() => setExtensionOpen(true)}>Solicitar prorrogacao</button>}
       {canComplete && task.status !== 'Concluida' && <button type="button" className="completeButton" onClick={onComplete}><CheckCircle2 size={14} />Finalizar</button>}
 
       {commentOpen && (
@@ -807,6 +858,16 @@ function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment
             <div className="modalHead"><div><h2>Comentario</h2><p>{task.title}</p></div><button type="button" onClick={() => setCommentOpen(false)}><X size={16} /></button></div>
             <label>Observacao<textarea value={comment} onChange={(event) => { setComment(event.target.value); setSavedComment(false); }} placeholder="Escreva uma observacao sobre esta atividade" autoFocus /></label>
             <div className="modalActions"><button type="button" onClick={() => setCommentOpen(false)}>Cancelar</button><button className="primary" disabled={savingComment}>{savingComment ? 'Enviando...' : 'Enviar comentario'}</button></div>
+          </form>
+        </div>
+      )}
+      {extensionOpen && (
+        <div className="modalBackdrop commentBackdrop" onClick={() => setExtensionOpen(false)}>
+          <form className="commentModal" onSubmit={saveExtensionRequest} onClick={(event) => event.stopPropagation()}>
+            <div className="modalHead"><div><h2>Solicitar prorrogacao</h2><p>{task.title}</p></div><button type="button" onClick={() => setExtensionOpen(false)}><X size={16} /></button></div>
+            <label>Novo prazo<input type="date" value={extensionDueDate} onChange={(event) => setExtensionDueDate(event.target.value)} required /></label>
+            <label>Justificativa<textarea value={extensionReason} onChange={(event) => setExtensionReason(event.target.value)} placeholder="Explique o motivo da prorrogacao" required autoFocus /></label>
+            <div className="modalActions"><button type="button" onClick={() => setExtensionOpen(false)}>Cancelar</button><button className="primary" disabled={savingExtension}>{savingExtension ? 'Enviando...' : 'Enviar solicitacao'}</button></div>
           </form>
         </div>
       )}
