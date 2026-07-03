@@ -40,11 +40,18 @@ function mapClientTaskEvent(row) {
   };
 }
 
+function formatClientName(row) {
+  const name = row.client?.name ?? 'Cliente';
+  const uf = row.client?.uf;
+  return uf ? name + ' - ' + uf : name;
+}
+
 function mapClientTask(row) {
   return {
     id: row.id,
     clientId: row.client_id,
-    clientName: row.client?.name ?? 'Cliente',
+    clientName: formatClientName(row),
+    clientUf: row.client?.uf ?? '',
     title: row.title,
     status: row.status,
     priority: row.priority,
@@ -80,10 +87,11 @@ async function createAgendaEntryFromClientTask(task, assignedId, createdBy, acti
   if (!assignedId) return;
 
   const orderLabel = task.orderNumber || task.order_number || 'sem numero';
+  const clientLabel = task.clientName || formatClientName(task);
   const title = task.title || 'Atividade do pedido';
   const restriction = task.restrictionStatus || task.restriction_status || 'Sem restricoes';
   const notes = task.notes || '';
-  const agendaTitle = `Pedido ${orderLabel} - ${title}`;
+  const agendaTitle = `${clientLabel} - Pedido ${orderLabel} - ${title}`;
   const agendaDescription = `${action}. Status: ${restriction}.`;
 
   const { data: existing, error: lookupError } = await supabase
@@ -198,7 +206,7 @@ export async function createClientTask(task) {
     attachment_url: task.attachmentUrl || null,
     priority: task.priority || 'Media',
     created_by: task.createdBy
-  }).select('id, order_number, title, restriction_status, notes, attachment_name, attachment_url, priority').single();
+  }).select('id, order_number, title, restriction_status, notes, attachment_name, attachment_url, priority, client:clients!client_tasks_client_id_fkey(name, uf)').single();
 
   if (error) throw error;
 
@@ -209,7 +217,8 @@ export async function createClientTask(task) {
     orderNumber: data.order_number,
     restrictionStatus: data.restriction_status,
     attachmentName: data.attachment_name,
-    attachmentUrl: data.attachment_url
+    attachmentUrl: data.attachment_url,
+    clientName: formatClientName(data)
   }, task.assignedId, task.createdBy, 'Novo pedido atribuido');
 }
 
@@ -219,7 +228,7 @@ export async function completeClientTask(id, nextProfileId = null) {
 
   const { data: currentTask, error: loadError } = await supabase
     .from('client_tasks')
-    .select('id, order_number, title, restriction_status, notes, attachment_name, attachment_url, priority')
+    .select('id, order_number, title, restriction_status, notes, attachment_name, attachment_url, priority, client:clients!client_tasks_client_id_fkey(name, uf)')
     .eq('id', id)
     .single();
 
@@ -259,7 +268,7 @@ export async function loadClientTasks() {
 
   const { data, error } = await supabase
     .from('client_tasks')
-    .select('id, client_id, order_number, title, status, priority, restriction_status, notes, attachment_name, attachment_url, assigned_profile_id, next_profile_id, current_step, next_step, client:clients!client_tasks_client_id_fkey(name), assigned_profile:profiles!client_tasks_assigned_profile_id_fkey(full_name), next_profile:profiles!client_tasks_next_profile_id_fkey(full_name)')
+    .select('id, client_id, order_number, title, status, priority, restriction_status, notes, attachment_name, attachment_url, assigned_profile_id, next_profile_id, current_step, next_step, client:clients!client_tasks_client_id_fkey(name, uf), assigned_profile:profiles!client_tasks_assigned_profile_id_fkey(full_name), next_profile:profiles!client_tasks_next_profile_id_fkey(full_name)')
     .order('created_at', { ascending: true });
 
   if (error) throw error;

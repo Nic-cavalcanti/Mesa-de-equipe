@@ -61,6 +61,7 @@ create table if not exists clients (
   client_code text,
   name text not null,
   cnpj text,
+  uf text,
   segment text,
   owner_profile_id uuid references profiles(id),
   initials text,
@@ -143,6 +144,7 @@ create table if not exists personal_tasks (
 
 alter table clients add column if not exists client_code text;
 alter table clients add column if not exists cnpj text;
+alter table clients add column if not exists uf text;
 
 create table if not exists client_tasks (
   id uuid primary key default gen_random_uuid(),

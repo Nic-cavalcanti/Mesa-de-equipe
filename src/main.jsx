@@ -70,6 +70,7 @@ function App() {
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
   const [authError, setAuthError] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [currentProfile, setCurrentProfile] = useState(null);
   const [teamProfiles, setTeamProfiles] = useState([]);
   const [personalTasks, setPersonalTasks] = useState([]);
@@ -141,6 +142,8 @@ function App() {
     if (!isSupabaseConfigured || !session) return;
 
     let active = true;
+    setAuthError(null);
+    setProfileLoading(true);
 
     loadCurrentProfile()
       .then((loadedProfile) => {
@@ -148,6 +151,9 @@ function App() {
       })
       .catch((error) => {
         if (active) setAuthError(explainAuthError(error));
+      })
+      .finally(() => {
+        if (active) setProfileLoading(false);
       });
 
     return () => {
@@ -316,7 +322,8 @@ function App() {
   if (authLoading) return <AuthShell title="Carregando acesso" text="Conferindo sua sessao com seguranca..." />;
   if (isSupabaseConfigured && !session) return <LoginScreen error={authError} onError={setAuthError} />;
   if (isSupabaseConfigured && session && !currentProfile) {
-    return <AuthShell title="Perfil pendente" text={authError || 'Seu login existe, mas ainda precisamos cadastrar seu perfil de acesso na tabela profiles.'} action={<button className="primary" onClick={() => signOut()}>Sair</button>} />;
+    if (!authError) return <AuthShell title="Carregando perfil" text="Preparando sua mesa de trabalho..." />;
+    return <AuthShell title="Perfil pendente" text={authError} action={<button className="primary" onClick={() => signOut()}>Sair</button>} />;
   }
 
   const routeTitles = {
@@ -520,7 +527,7 @@ function ReportsView({ metrics, clientTasks, personalTasks, clients, teamProfile
   const openClientTasks = clientTasks.filter((task) => task.status !== 'Concluida');
   const workload = teamProfiles.map((member) => ({
     ...member,
-    personal: openPersonal.filter((task) => task.assignedId === member.id).length,
+    personal: openPersonal.filter((task) => task.assignedId === member.id || task.participants?.some((participant) => participant.id === member.id)).length,
     orders: openClientTasks.filter((task) => task.assignedId === member.id).length
   }));
 
@@ -534,7 +541,7 @@ function ReportsView({ metrics, clientTasks, personalTasks, clients, teamProfile
         <article><h2>Clientes cadastrados</h2><strong className="largeNumber">{clients.length}</strong><span>ativos na base</span></article>
       </div>
       <div className="reportGrid operationalGrid">
-        <article><h2>Carga por colaborador</h2>{workload.map((item) => <p className="listLine" key={item.id}><strong>{item.name}</strong><span>{item.personal + item.orders} pendencias</span></p>)}{!workload.length && <p className="emptyState">Equipe ainda nao carregada.</p>}</article>
+        <article><h2>Carga por colaborador</h2>{workload.map((item) => <p className="listLine" key={item.id}><strong>{item.name}</strong><span>{item.personal} atividades</span></p>)}{!workload.length && <p className="emptyState">Equipe ainda nao carregada.</p>}</article>
         <article><h2>Pedidos parados</h2>{openClientTasks.slice(0, 6).map((task) => <p className="listLine" key={task.id}><strong>{task.clientName}</strong><span>{task.assignedName}</span></p>)}{!openClientTasks.length && <p className="emptyState">Nenhum pedido aberto.</p>}</article>
       </div>
     </section>
@@ -542,7 +549,8 @@ function ReportsView({ metrics, clientTasks, personalTasks, clients, teamProfile
 }
 
 function ClientCreateForm({ onCreate, onCancel }) {
-  const [form, setForm] = useState({ clientCode: '', name: '', cnpj: '', segment: '', priority: 'Media', summary: '' });
+  const [form, setForm] = useState({ clientCode: '', name: '', cnpj: '', uf: '', segment: '', priority: 'Media', summary: '' });
+  const [saving, setSaving] = useState(false);
 
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -550,8 +558,14 @@ function ClientCreateForm({ onCreate, onCancel }) {
 
   async function submit(event) {
     event.preventDefault();
-    await onCreate(form);
-    setForm({ clientCode: '', name: '', cnpj: '', segment: '', priority: 'Media', summary: '' });
+    if (saving) return;
+    setSaving(true);
+    try {
+      await onCreate(form);
+      setForm({ clientCode: '', name: '', cnpj: '', uf: '', segment: '', priority: 'Media', summary: '' });
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -561,13 +575,14 @@ function ClientCreateForm({ onCreate, onCancel }) {
         <label>ID do cliente<input value={form.clientCode} onChange={(event) => update('clientCode', event.target.value)} placeholder="Ex.: CLI-1024" /></label>
         <label>Nome<input value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="Nome do cliente" required /></label>
         <label>CNPJ opcional<input value={form.cnpj} onChange={(event) => update('cnpj', event.target.value)} placeholder="00.000.000/0000-00" /></label>
+        <label>UF<input value={form.uf} onChange={(event) => update('uf', event.target.value.toUpperCase().slice(0, 2))} placeholder="CE" maxLength={2} /></label>
       </div>
       <div className="taskFormGrid">
         <label>Segmento<input value={form.segment} onChange={(event) => update('segment', event.target.value)} placeholder="Distribuidor, varejo..." /></label>
         <label>Prioridade<select value={form.priority} onChange={(event) => update('priority', event.target.value)}><option>Alta</option><option>Media</option><option>Baixa</option></select></label>
         <label>Resumo<input value={form.summary} onChange={(event) => update('summary', event.target.value)} placeholder="Observacao inicial" /></label>
       </div>
-      <div className="formActions"><button className="primary">Salvar cliente</button><button type="button" onClick={onCancel}>Cancelar</button></div>
+      <div className="formActions"><button className="primary" disabled={saving}>{saving ? 'Salvando...' : 'Salvar cliente'}</button><button type="button" onClick={onCancel}>Cancelar</button></div>
     </form>
   );
 }
@@ -855,7 +870,7 @@ function ClientListRow({ client, profile, selected, onSelect, onOpen }) {
       <span>{client.clientCode || 'Sem ID'}</span>
       <strong>{client.name}</strong>
       <em>{client.cnpj || 'CNPJ nao informado'}</em>
-      <small>{client.priority} · {client.health} · {mainFlag}</small>
+      <small>{client.uf ? client.uf + ' · ' : ''}{client.priority} · {client.health} · {mainFlag}</small>
     </button>
   );
 }

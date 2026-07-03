@@ -27,6 +27,7 @@ function mapClient(row) {
     clientCode: row.client_code ?? '',
     name: row.name,
     cnpj: row.cnpj ?? '',
+    uf: row.uf ?? '',
     segment: row.segment ?? 'Cliente',
     owner: row.profiles?.full_name ?? 'Sem responsavel',
     initials: row.initials ?? row.name.slice(0, 2).toUpperCase(),
@@ -90,6 +91,23 @@ export async function loadClientsFromDatabase() {
 export async function createClientRecord(client) {
   if (!isSupabaseConfigured) throw new Error('Supabase nao configurado.');
 
+  const duplicateChecks = [
+    ['client_code', client.clientCode?.trim()],
+    ['cnpj', client.cnpj?.trim()],
+    ['name', client.name?.trim()]
+  ].filter(([, value]) => value);
+
+  for (const [field, value] of duplicateChecks) {
+    const { data: existing, error: lookupError } = await supabase
+      .from('clients')
+      .select('id')
+      .eq(field, value)
+      .limit(1);
+
+    if (lookupError) throw lookupError;
+    if (existing?.length) return existing[0];
+  }
+
   const initials = client.name
     .split(' ')
     .filter(Boolean)
@@ -102,6 +120,7 @@ export async function createClientRecord(client) {
     client_code: client.clientCode || null,
     name: client.name,
     cnpj: client.cnpj || null,
+    uf: client.uf || null,
     segment: client.segment || 'Cliente',
     initials: initials || client.name.slice(0, 2).toUpperCase(),
     health: 'Estavel',
