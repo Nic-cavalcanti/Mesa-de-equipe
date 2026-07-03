@@ -60,3 +60,16 @@
 .extensionNotice{border-left:3px solid #f59e0b;background:#fff9e8;border-radius:9px;padding:9px 10px;color:#9a5b00!important;font-weight:800}
 .commentModal input[type=date]{height:42px;border:1px solid #d9e0e7;border-radius:12px;padding:0 11px;outline:0;color:#344054}
 .commentModal input[type=date]:focus{border-color:#0c8c84;box-shadow:0 0 0 3px #dff1f1}
+
+.taskCard{padding:11px;margin-bottom:9px}
+.taskCardHead{display:grid!important;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:10px}
+.taskCardHead strong{font-size:13.5px;line-height:1.28;color:#111827;font-weight:850;overflow-wrap:anywhere}
+.taskCardHead span{display:block;margin-top:4px;font-size:11.5px;line-height:1.25;color:#667085}
+.taskCardHead small{border-radius:999px;background:#eef2f6;color:#536174;font-size:10.5px;font-weight:900;padding:4px 7px;white-space:nowrap}
+.taskCardSummary{display:flex!important;justify-content:flex-start!important;gap:6px;flex-wrap:wrap;margin-top:9px}
+.taskCardSummary span{border-radius:999px;background:#f2f6f7;color:#536174;font-size:10.5px;font-weight:850;padding:4px 7px;line-height:1}
+.expandTaskButton{width:100%;height:30px;margin-top:9px;border:0;border-radius:8px;background:#eef7f7;color:#075f5b;font-size:12px;font-weight:900}
+.taskCardDetails{display:grid!important;gap:9px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.taskCardDetails p{margin:0;font-size:12.5px;line-height:1.4}
+.taskCardDetails .commentActions{margin-top:0}
+.taskCardDetails .completeButton,.taskCardDetails .extensionButton{margin-top:0}

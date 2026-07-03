@@ -798,6 +798,7 @@ function formatDate(value) {
 }
 
 function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment, onRequestExtension }) {
+  const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState(task.comments ?? '');
   const [extensionReason, setExtensionReason] = useState('');
   const [extensionDueDate, setExtensionDueDate] = useState('');
@@ -806,6 +807,7 @@ function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment
   const [savedComment, setSavedComment] = useState(false);
   const [commentOpen, setCommentOpen] = useState(false);
   const [extensionOpen, setExtensionOpen] = useState(false);
+  const hasExtraInfo = Boolean(task.description || task.comments || task.extensionStatus || task.attachmentUrl || task.participants?.length);
 
   useEffect(() => {
     setComment(task.comments ?? '');
@@ -822,6 +824,7 @@ function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment
       await onSaveComment(task.id, comment);
       setSavedComment(true);
       setCommentOpen(false);
+      setExpanded(true);
     } finally {
       setSavingComment(false);
     }
@@ -833,6 +836,7 @@ function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment
     try {
       await onRequestExtension(task.id, extensionDueDate, extensionReason);
       setExtensionOpen(false);
+      setExpanded(true);
     } finally {
       setSavingExtension(false);
     }
@@ -840,17 +844,38 @@ function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment
 
   return (
     <div className={task.status === 'Concluida' ? 'taskCard done' : isOverdue(task) ? 'taskCard overdue' : task.status === 'Em andamento' ? 'taskCard doing' : 'taskCard'}>
-      <div><strong>{task.title}</strong><span>{task.assignedName}</span></div>
-      {task.description && <p>{task.description}</p>}
-      {task.participants?.length > 0 && <p className="participantLine">Com: {task.participants.map((item) => item.name).join(', ')}</p>}
-      {task.comments && <p className="commentPreview">{task.comments}</p>}
-      {task.extensionStatus && <p className="extensionNotice">Prorrogacao solicitada{task.extensionDueDate ? ' para ' + formatDate(task.extensionDueDate) : ''}: {task.extensionReason || 'sem justificativa informada'}</p>}
-      {task.attachmentUrl && <a className="attachmentLink" href={task.attachmentUrl} target="_blank" rel="noreferrer">{task.attachmentName || 'Abrir anexo'}</a>}
-      <footer><span>{dueText(task)}</span><span>{task.priority}</span></footer>
-      {onUpdateStatus && <label className="statusControl">Status<select value={task.status} onChange={(event) => onUpdateStatus(task.id, event.target.value)}><option>A fazer</option><option>Em andamento</option><option>Concluida</option></select></label>}
-      {onSaveComment && <div className="commentActions"><button type="button" onClick={() => setCommentOpen(true)}>{task.comments ? 'Editar comentario' : 'Comentar'}</button>{savedComment && <span>Comentario salvo</span>}</div>}
-      {onRequestExtension && task.status !== 'Concluida' && <button type="button" className="extensionButton" onClick={() => setExtensionOpen(true)}>Solicitar prorrogacao</button>}
-      {canComplete && task.status !== 'Concluida' && <button type="button" className="completeButton" onClick={onComplete}><CheckCircle2 size={14} />Finalizar</button>}
+      <div className="taskCardHead">
+        <div>
+          <strong>{task.title}</strong>
+          <span>{task.assignedName} · {dueText(task)}</span>
+        </div>
+        <small>{task.priority}</small>
+      </div>
+
+      <div className="taskCardSummary">
+        <span>{task.status}</span>
+        {task.participants?.length > 0 && <span>Com {task.participants.length}</span>}
+        {task.comments && <span>Comentario</span>}
+        {task.extensionStatus && <span>Prorrogacao</span>}
+      </div>
+
+      <button type="button" className="expandTaskButton" onClick={() => setExpanded((current) => !current)}>
+        {expanded ? 'Ver menos' : hasExtraInfo ? 'Ver mais' : 'Expandir'}
+      </button>
+
+      {expanded && (
+        <div className="taskCardDetails">
+          {task.description && <p>{task.description}</p>}
+          {task.participants?.length > 0 && <p className="participantLine">Com: {task.participants.map((item) => item.name).join(', ')}</p>}
+          {task.comments && <p className="commentPreview">{task.comments}</p>}
+          {task.extensionStatus && <p className="extensionNotice">Prorrogacao solicitada{task.extensionDueDate ? ' para ' + formatDate(task.extensionDueDate) : ''}: {task.extensionReason || 'sem justificativa informada'}</p>}
+          {task.attachmentUrl && <a className="attachmentLink" href={task.attachmentUrl} target="_blank" rel="noreferrer">{task.attachmentName || 'Abrir anexo'}</a>}
+          {onUpdateStatus && <label className="statusControl">Status<select value={task.status} onChange={(event) => onUpdateStatus(task.id, event.target.value)}><option>A fazer</option><option>Em andamento</option><option>Concluida</option></select></label>}
+          {onSaveComment && <div className="commentActions"><button type="button" onClick={() => setCommentOpen(true)}>{task.comments ? 'Editar comentario' : 'Comentar'}</button>{savedComment && <span>Comentario salvo</span>}</div>}
+          {onRequestExtension && task.status !== 'Concluida' && <button type="button" className="extensionButton" onClick={() => setExtensionOpen(true)}>Solicitar prorrogacao</button>}
+          {canComplete && task.status !== 'Concluida' && <button type="button" className="completeButton" onClick={onComplete}><CheckCircle2 size={14} />Finalizar</button>}
+        </div>
+      )}
 
       {commentOpen && (
         <div className="modalBackdrop commentBackdrop" onClick={() => setCommentOpen(false)}>
