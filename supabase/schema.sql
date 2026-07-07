@@ -199,6 +199,8 @@ alter table personal_tasks add column if not exists extension_reason text;
 alter table personal_tasks add column if not exists extension_status text;
 alter table personal_tasks add column if not exists extension_requested_at timestamptz;
 alter table personal_tasks add column if not exists extension_requested_by uuid references profiles(id);
+alter table personal_tasks add column if not exists extension_decided_at timestamptz;
+alter table personal_tasks add column if not exists extension_decided_by uuid references profiles(id);
 
 create or replace function touch_updated_at()
 returns trigger as $$

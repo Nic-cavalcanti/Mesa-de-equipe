@@ -24,6 +24,8 @@ function mapPersonalTask(row) {
     extensionStatus: row.extension_status ?? '',
     extensionRequestedAt: row.extension_requested_at ?? '',
     extensionRequestedBy: row.extension_requested_by ?? '',
+    extensionDecidedAt: row.extension_decided_at ?? '',
+    extensionDecidedBy: row.extension_decided_by ?? '',
     assignedId: row.assigned_profile_id,
     assignedName: row.assigned_profile?.full_name ?? 'Sem responsavel',
     participants: (row.participants ?? []).map((item) => ({
@@ -142,7 +144,7 @@ export async function loadPersonalTasks() {
 
   const { data, error } = await supabase
     .from('personal_tasks')
-    .select('id, title, description, comments, due_date, status, priority, attachment_name, attachment_url, extension_due_date, extension_reason, extension_status, extension_requested_at, extension_requested_by, assigned_profile_id, assigned_profile:profiles!personal_tasks_assigned_profile_id_fkey(full_name), participants:personal_task_participants(profile_id, profile:profiles!personal_task_participants_profile_id_fkey(full_name))')
+    .select('id, title, description, comments, due_date, status, priority, attachment_name, attachment_url, extension_due_date, extension_reason, extension_status, extension_requested_at, extension_requested_by, extension_decided_at, extension_decided_by, assigned_profile_id, assigned_profile:profiles!personal_tasks_assigned_profile_id_fkey(full_name), participants:personal_task_participants(profile_id, profile:profiles!personal_task_participants_profile_id_fkey(full_name))')
     .order('due_date', { ascending: true, nullsFirst: false });
 
   if (error) throw error;
@@ -205,6 +207,35 @@ export async function requestPersonalTaskExtension(id, dueDate, reason) {
       extension_requested_at: new Date().toISOString(),
       extension_requested_by: userData.user.id
     })
+    .eq('id', id);
+
+  if (error) throw error;
+}
+
+export async function reviewPersonalTaskExtension(id, decision) {
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) throw userError;
+
+  const { data: task, error: loadError } = await supabase
+    .from('personal_tasks')
+    .select('extension_due_date')
+    .eq('id', id)
+    .single();
+
+  if (loadError) throw loadError;
+
+  const approved = decision === 'approved';
+  const update = {
+    extension_status: approved ? 'Aprovada' : 'Recusada',
+    extension_decided_at: new Date().toISOString(),
+    extension_decided_by: userData.user.id
+  };
+
+  if (approved && task.extension_due_date) update.due_date = task.extension_due_date;
+
+  const { error } = await supabase
+    .from('personal_tasks')
+    .update(update)
     .eq('id', id);
 
   if (error) throw error;

@@ -5,7 +5,7 @@ import { clients as fallbackClients, team } from './data.js';
 import { isSupabaseConfigured } from './lib/supabase.js';
 import { getInitialSession, listenToAuthChanges, loadCurrentProfile, signInWithPassword, signOut } from './services/authRepository.js';
 import { createClientRecord, loadClientsFromDatabase } from './services/clientRepository.js';
-import { addClientTaskComment, addPersonalTaskComment, applyClientTaskAction, completeClientTask, completePersonalTask, createClientTask, createPersonalTask, loadClientTaskEvents, loadClientTasks, loadPersonalTasks, loadTeamProfiles, requestPersonalTaskExtension, updatePersonalTaskStatus } from './services/taskRepository.js';
+import { addClientTaskComment, addPersonalTaskComment, applyClientTaskAction, completeClientTask, completePersonalTask, createClientTask, createPersonalTask, loadClientTaskEvents, loadClientTasks, loadPersonalTasks, loadTeamProfiles, requestPersonalTaskExtension, reviewPersonalTaskExtension, updatePersonalTaskStatus } from './services/taskRepository.js';
 import './styles.css';
 
 const profilePermissions = {
@@ -252,6 +252,17 @@ function App() {
     }
   }
 
+  async function handleReviewPersonalTaskExtension(id, decision) {
+    setTaskError(null);
+    try {
+      await reviewPersonalTaskExtension(id, decision);
+      await refreshTasks();
+    } catch (error) {
+      setTaskError(explainAuthError(error));
+      throw error;
+    }
+  }
+
   async function handleCompletePersonalTask(id) {
     await completePersonalTask(id);
     await refreshTasks();
@@ -426,6 +437,7 @@ function App() {
           onUpdatePersonalTaskStatus={handleUpdatePersonalTaskStatus}
           onSavePersonalTaskComment={handleSavePersonalTaskComment}
           onRequestPersonalTaskExtension={handleRequestPersonalTaskExtension}
+          onReviewPersonalTaskExtension={handleReviewPersonalTaskExtension}
         />
       </main>
 
@@ -449,9 +461,9 @@ function App() {
   );
 }
 
-function MainContent({ route, metrics, filter, setFilter, visibleClients, selectedId, setSelectedId, openClient, openOrderTask, profile, currentProfile, teamProfiles, personalTasks, clientTasks, showTaskForm, onCloseTaskForm, onCreatePersonalTask, onCompletePersonalTask, onUpdatePersonalTaskStatus, onSavePersonalTaskComment, onRequestPersonalTaskExtension }) {
+function MainContent({ route, metrics, filter, setFilter, visibleClients, selectedId, setSelectedId, openClient, openOrderTask, profile, currentProfile, teamProfiles, personalTasks, clientTasks, showTaskForm, onCloseTaskForm, onCreatePersonalTask, onCompletePersonalTask, onUpdatePersonalTaskStatus, onSavePersonalTaskComment, onRequestPersonalTaskExtension, onReviewPersonalTaskExtension }) {
   if (route === 'agenda') {
-    return <AgendaView profile={profile} currentProfile={currentProfile} teamProfiles={teamProfiles} personalTasks={personalTasks} showTaskForm={showTaskForm} onCloseTaskForm={onCloseTaskForm} onCreate={onCreatePersonalTask} onComplete={onCompletePersonalTask} onUpdateStatus={onUpdatePersonalTaskStatus} onSaveComment={onSavePersonalTaskComment} onRequestExtension={onRequestPersonalTaskExtension} />;
+    return <AgendaView profile={profile} currentProfile={currentProfile} teamProfiles={teamProfiles} personalTasks={personalTasks} showTaskForm={showTaskForm} onCloseTaskForm={onCloseTaskForm} onCreate={onCreatePersonalTask} onComplete={onCompletePersonalTask} onUpdateStatus={onUpdatePersonalTaskStatus} onSaveComment={onSavePersonalTaskComment} onRequestExtension={onRequestPersonalTaskExtension} onReviewExtension={onReviewPersonalTaskExtension} />;
   }
 
   if (route === 'orders') {
@@ -671,7 +683,7 @@ function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, o
   );
 }
 
-function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, showTaskForm, onCloseTaskForm, onCreate, onComplete, onUpdateStatus, onSaveComment, onRequestExtension }) {
+function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, showTaskForm, onCloseTaskForm, onCreate, onComplete, onUpdateStatus, onSaveComment, onRequestExtension, onReviewExtension }) {
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
   const [form, setForm] = useState({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId: currentProfile?.id ?? '', participantIds: [], attachmentUrl: '', attachmentName: '' });
@@ -685,6 +697,7 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
     return matchesOwner && matchesDate;
   });
   const columns = buildAgendaColumns(filteredTasks);
+  const pendingExtensions = personalTasks.filter((task) => task.extensionStatus === 'Solicitada');
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -749,11 +762,25 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
         )}
       </section>
 
+      {canManageAll && pendingExtensions.length > 0 && (
+        <section className="approvalPanel">
+          <div className="sectionTitle compact"><div><h2>Prorrogacoes pendentes</h2><p>Pedidos de prazo aguardando decisao de gestao.</p></div><strong>{pendingExtensions.length}</strong></div>
+          <div className="approvalList">
+            {pendingExtensions.map((task) => (
+              <article key={task.id} className="approvalItem">
+                <div><strong>{task.title}</strong><span>{task.assignedName} pediu ate {formatDate(task.extensionDueDate)}</span><p>{task.extensionReason || 'Sem justificativa informada.'}</p></div>
+                <div className="approvalActions"><button type="button" onClick={() => onReviewExtension(task.id, 'approved')}>Aprovar</button><button type="button" className="dangerAction" onClick={() => onReviewExtension(task.id, 'rejected')}>Recusar</button></div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
       <div className="agendaColumns coloredColumns">
         {columns.map((column) => (
           <article key={column.id} className={'agendaColumn ' + column.id}>
             <h2>{column.label} <span>{column.tasks.length}</span></h2>
-            {column.tasks.map((task) => <TaskCard key={task.id} task={task} canComplete onComplete={() => onComplete(task.id)} onUpdateStatus={onUpdateStatus} onSaveComment={onSaveComment} onRequestExtension={onRequestExtension} />)}
+            {column.tasks.map((task) => <TaskCard key={task.id} task={task} canComplete canReviewExtension={canManageAll} onComplete={() => onComplete(task.id)} onUpdateStatus={onUpdateStatus} onSaveComment={onSaveComment} onRequestExtension={onRequestExtension} onReviewExtension={onReviewExtension} />)}
             {!column.tasks.length && <p className="emptyState">Nada por aqui.</p>}
           </article>
         ))}
@@ -797,7 +824,7 @@ function formatDate(value) {
   return new Date(value + 'T00:00:00').toLocaleDateString('pt-BR');
 }
 
-function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment, onRequestExtension }) {
+function TaskCard({ task, canComplete, canReviewExtension, onComplete, onUpdateStatus, onSaveComment, onRequestExtension, onReviewExtension }) {
   const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState(task.comments ?? '');
   const [extensionReason, setExtensionReason] = useState('');
@@ -867,7 +894,8 @@ function TaskCard({ task, canComplete, onComplete, onUpdateStatus, onSaveComment
           {task.description && <p>{task.description}</p>}
           {task.participants?.length > 0 && <p className="participantLine">Com: {task.participants.map((item) => item.name).join(', ')}</p>}
           {task.comments && <p className="commentPreview">{task.comments}</p>}
-          {task.extensionStatus && <p className="extensionNotice">Prorrogacao solicitada{task.extensionDueDate ? ' para ' + formatDate(task.extensionDueDate) : ''}: {task.extensionReason || 'sem justificativa informada'}</p>}
+          {task.extensionStatus && <p className="extensionNotice">Prorrogacao {task.extensionStatus.toLowerCase()}{task.extensionDueDate ? ' para ' + formatDate(task.extensionDueDate) : ''}: {task.extensionReason || 'sem justificativa informada'}</p>}
+          {canReviewExtension && task.extensionStatus === 'Solicitada' && <div className="approvalActions inlineApproval"><button type="button" onClick={() => onReviewExtension(task.id, 'approved')}>Aprovar prazo</button><button type="button" className="dangerAction" onClick={() => onReviewExtension(task.id, 'rejected')}>Recusar</button></div>}
           {task.attachmentUrl && <a className="attachmentLink" href={task.attachmentUrl} target="_blank" rel="noreferrer">{task.attachmentName || 'Abrir anexo'}</a>}
           {onUpdateStatus && <label className="statusControl">Status<select value={task.status} onChange={(event) => onUpdateStatus(task.id, event.target.value)}><option>A fazer</option><option>Em andamento</option><option>Concluida</option></select></label>}
           {onSaveComment && <div className="commentActions"><button type="button" onClick={() => setCommentOpen(true)}>{task.comments ? 'Editar comentario' : 'Comentar'}</button>{savedComment && <span>Comentario salvo</span>}</div>}
