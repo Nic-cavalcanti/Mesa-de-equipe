@@ -351,12 +351,16 @@ function App() {
     clients: 'Clientes',
     agenda: 'Agenda',
     orders: 'Pedidos',
+    tireReserve: 'Reserva de pneus',
+    stockReserve: 'Sem estoque',
     reports: 'Relatorios'
   };
   const title = routeTitles[route] ?? 'Visao geral';
   const bannerText = route === 'agenda'
     ? profile.id === 'manager' ? 'Gestores veem e criam atividades para toda a equipe.' : 'Sua agenda e privada: so voce e gestores conseguem ver.'
-    : route === 'orders' ? 'Pedidos reúnem as atividades operacionais por numero de pedido e restricao.'
+    : route === 'orders' ? 'Pedidos reunem as atividades operacionais por numero de pedido e restricao.'
+    : route === 'tireReserve' ? 'Pedidos reservados para separar pneus antes da proxima etapa.'
+    : route === 'stockReserve' ? 'Pedidos aguardando estoque para acompanhamento sem perder visibilidade.'
     : route === 'reports' ? 'Relatorios consolidam bloqueios, pedidos e carga da equipe.'
     : profile.canSeeFinancial ? 'Voce esta vendo informacoes financeiras e operacionais.' : 'Valores de limite, uso de credito e bloqueios financeiros estao ocultos neste perfil.';
 
@@ -372,6 +376,8 @@ function App() {
           <button className={route === 'agenda' ? 'active' : ''} onClick={() => setRoute('agenda')}><CalendarDays size={18} />Agenda</button>
           <button className={route === 'clients' ? 'active' : ''} onClick={() => setRoute('clients')}><UsersRound size={18} />Clientes</button>
           <button className={route === 'orders' ? 'active' : ''} onClick={() => setRoute('orders')}><PackageCheck size={18} />Pedidos</button>
+          <button className={route === 'tireReserve' ? 'active' : ''} onClick={() => setRoute('tireReserve')}><Lock size={18} />Reserva pneus</button>
+          <button className={route === 'stockReserve' ? 'active' : ''} onClick={() => setRoute('stockReserve')}><ShieldAlert size={18} />Sem estoque</button>
           <button className={route === 'reports' ? 'active' : ''} onClick={() => setRoute('reports')}><ClipboardList size={18} />Relatorios</button>
         </nav>
 
@@ -470,6 +476,14 @@ function MainContent({ route, metrics, filter, setFilter, visibleClients, select
     return <OrdersView clientTasks={clientTasks} openClient={openClient} openOrderTask={openOrderTask} clients={visibleClients} />;
   }
 
+  if (route === 'tireReserve') {
+    return <ReservationView title="Reserva de pneus" description="Pedidos separados para reservar pneus antes da proxima etapa." status="Reserva de pneus" clientTasks={clientTasks} openOrderTask={openOrderTask} />;
+  }
+
+  if (route === 'stockReserve') {
+    return <ReservationView title="Pedidos sem estoque" description="Pedidos que precisam ficar reservados ate entrada de estoque." status="Pedido sem estoque" clientTasks={clientTasks} openOrderTask={openOrderTask} />;
+  }
+
   if (route === 'calendar') {
     return <CalendarView personalTasks={personalTasks} clientTasks={clientTasks} />;
   }
@@ -524,6 +538,19 @@ function OrdersView({ clientTasks, openClient, openOrderTask, clients }) {
           </div>
         )}
       </section>
+    </section>
+  );
+}
+
+function ReservationView({ title, description, status, clientTasks, openOrderTask }) {
+  const tasks = clientTasks.filter((task) => task.status !== 'Concluida' && task.restrictionStatus === status);
+
+  return (
+    <section className="routeSurface">
+      <div className="sectionTitle"><div><h2>{title}</h2><p>{description}</p></div><strong>{tasks.length} pedidos</strong></div>
+      <div className="orderBoard singleBoard reserveBoard">
+        <article><h2>Em acompanhamento</h2>{tasks.map((task) => <OrderCard key={task.id} task={task} onOpen={() => openOrderTask(task)} />)}{!tasks.length && <p className="emptyState">Nenhum pedido nesta reserva.</p>}</article>
+      </div>
     </section>
   );
 }
@@ -638,7 +665,9 @@ function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, o
     { id: 'pay', title: 'Aguardando pagamento', tasks: openTasks.filter((task) => task.restrictionStatus === 'Aguardando pagamento') },
     { id: 'delivery', title: 'Entrega nao liberada', tasks: openTasks.filter((task) => task.restrictionStatus === 'Nao entregar' || task.restrictionStatus === 'Nao faturar') },
     { id: 'transfer', title: 'Aguardando NF de transferencia', tasks: openTasks.filter((task) => task.restrictionStatus === 'Aguardando NF de transferencia') },
-    { id: 'released', title: 'Pedidos liberados para entrega', tasks: openTasks.filter((task) => task.restrictionStatus === 'Sem restricoes') }
+    { id: 'released', title: 'Pedidos liberados para entrega', tasks: openTasks.filter((task) => task.restrictionStatus === 'Sem restricoes') },
+    { id: 'tireReserve', title: 'Reserva de pneus', tasks: openTasks.filter((task) => task.restrictionStatus === 'Reserva de pneus') },
+    { id: 'stockReserve', title: 'Pedidos sem estoque', tasks: openTasks.filter((task) => task.restrictionStatus === 'Pedido sem estoque') }
   ];
   const visibleOrderGroups = stageFilter === 'all' ? orderGroups : orderGroups.filter((group) => group.id === stageFilter);
 
@@ -1179,7 +1208,7 @@ function ClientTaskForm({ client, teamProfiles, onCreate }) {
     <form className="miniTaskForm" onSubmit={submit}>
       <label>Pedido<input value={form.orderNumber} onChange={(event) => update('orderNumber', event.target.value)} placeholder="Numero do pedido" required /></label>
       <label>Atividade<input value={form.title} onChange={(event) => update('title', event.target.value)} placeholder="Ex.: Conferir pagamento" required /></label>
-      <label>Status<select value={form.restrictionStatus} onChange={(event) => update('restrictionStatus', event.target.value)}><option>Nao entregar</option><option>Aguardando pagamento</option><option>Nao faturar</option><option>Aguardando NF de transferencia</option><option>Sem restricoes</option></select></label>
+      <label>Status<select value={form.restrictionStatus} onChange={(event) => update('restrictionStatus', event.target.value)}><option>Nao entregar</option><option>Aguardando pagamento</option><option>Nao faturar</option><option>Aguardando NF de transferencia</option><option>Sem restricoes</option><option>Reserva de pneus</option><option>Pedido sem estoque</option></select></label>
       <label>Responsavel<select value={form.assignedId} onChange={(event) => update('assignedId', event.target.value)}><option value="">Equipe</option>{teamProfiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       <label>Proximo<select value={form.nextProfileId} onChange={(event) => update('nextProfileId', event.target.value)}><option value="">Entrega/final</option>{teamProfiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       <label>Observacoes<input value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Detalhes importantes" /></label>

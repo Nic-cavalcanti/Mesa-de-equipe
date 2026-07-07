@@ -45,9 +45,12 @@ exception when duplicate_object then null;
 end $$;
 
 do $$ begin
-  create type client_task_restriction as enum ('Nao entregar', 'Aguardando pagamento', 'Nao faturar', 'Aguardando NF de transferencia', 'Sem restricoes');
+  create type client_task_restriction as enum ('Nao entregar', 'Aguardando pagamento', 'Nao faturar', 'Aguardando NF de transferencia', 'Sem restricoes', 'Reserva de pneus', 'Pedido sem estoque');
 exception when duplicate_object then null;
 end $$;
+
+alter type client_task_restriction add value if not exists 'Reserva de pneus';
+alter type client_task_restriction add value if not exists 'Pedido sem estoque';
 
 create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,

@@ -91,3 +91,7 @@
 .approvalActions .dangerAction{background:#fff0f0;color:#c0363b}
 .inlineApproval{margin-top:2px}
 @media(max-width:760px){.approvalItem{grid-template-columns:1fr}.approvalActions button{width:100%}}
+
+.reserveBoard .orderCard{border-left:3px solid #08756f}
+.nav button{min-width:0}
+.nav button svg{flex:0 0 auto}
