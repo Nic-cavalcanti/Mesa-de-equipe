@@ -95,3 +95,11 @@
 .reserveBoard .orderCard{border-left:3px solid #08756f}
 .nav button{min-width:0}
 .nav button svg{flex:0 0 auto}
+
+.reportPeriod{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 12px 34px rgba(16,24,40,.04)}
+.reportPeriod div{margin-right:auto}
+.reportPeriod h2{margin:0 0 4px;font-size:16px}
+.reportPeriod p{margin:0;color:var(--muted);font-size:13px}
+.reportPeriod label{display:grid;gap:6px;color:#344054;font-size:12px;font-weight:900}
+.reportPeriod input{height:38px;border:1px solid #d9e0e7;border-radius:10px;padding:0 10px;color:#344054}
+@media(max-width:760px){.reportPeriod,.reportPeriod label{display:grid;width:100%}.reportPeriod div{margin-right:0}}

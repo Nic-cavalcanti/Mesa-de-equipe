@@ -197,6 +197,7 @@ alter table client_tasks add column if not exists attachment_url text;
 alter table personal_tasks add column if not exists attachment_name text;
 alter table personal_tasks add column if not exists attachment_url text;
 alter table personal_tasks add column if not exists comments text;
+alter table personal_tasks add column if not exists completed_at timestamptz;
 alter table personal_tasks add column if not exists extension_due_date date;
 alter table personal_tasks add column if not exists extension_reason text;
 alter table personal_tasks add column if not exists extension_status text;

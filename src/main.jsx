@@ -585,11 +585,55 @@ function CalendarView({ personalTasks, clientTasks }) {
   );
 }
 
+function dateOnly(value) {
+  if (!value) return '';
+  return String(value).slice(0, 10);
+}
+
+function taskCompletionDate(task) {
+  return dateOnly(task.completedAt || (task.status === 'Concluida' ? task.updatedAt : ''));
+}
+
+function taskMatchesAgendaDate(task, date) {
+  if (!date) return true;
+  const createdAt = dateOnly(task.createdAt);
+  const completedAt = taskCompletionDate(task);
+  if (task.dueDate === date || createdAt === date || completedAt === date) return true;
+  return task.status !== 'Concluida';
+}
+
+function dateInPeriod(value, start, end) {
+  const date = dateOnly(value);
+  if (!date) return false;
+  if (start && date < start) return false;
+  if (end && date > end) return false;
+  return true;
+}
+
+function taskInReportPeriod(task, start, end) {
+  return dateInPeriod(task.createdAt, start, end) || dateInPeriod(task.dueDate, start, end) || dateInPeriod(taskCompletionDate(task), start, end) || task.status !== 'Concluida';
+}
+
+function getDefaultReportPeriod() {
+  const today = new Date();
+  const end = today.toISOString().slice(0, 10);
+  const startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+  const start = startDate.toISOString().slice(0, 10);
+  return { start, end };
+}
+
 function ReportsView({ metrics, clientTasks, personalTasks, clients, teamProfiles }) {
+  const defaultPeriod = getDefaultReportPeriod();
+  const [periodStart, setPeriodStart] = useState(defaultPeriod.start);
+  const [periodEnd, setPeriodEnd] = useState(defaultPeriod.end);
   const blockedOrders = clientTasks.filter((task) => task.restrictionStatus && task.restrictionStatus !== 'Sem restricoes' && task.status !== 'Concluida');
   const doneOrders = clientTasks.filter((task) => task.status === 'Concluida');
   const openPersonal = personalTasks.filter((task) => task.status !== 'Concluida');
   const openClientTasks = clientTasks.filter((task) => task.status !== 'Concluida');
+  const periodTasks = personalTasks.filter((task) => taskInReportPeriod(task, periodStart, periodEnd));
+  const executedTasks = personalTasks.filter((task) => task.status === 'Concluida' && dateInPeriod(taskCompletionDate(task), periodStart, periodEnd));
+  const delayedTasks = personalTasks.filter((task) => task.dueDate && dateInPeriod(task.dueDate, periodStart, periodEnd) && (task.status !== 'Concluida' || taskCompletionDate(task) > task.dueDate));
+  const openPeriodTasks = periodTasks.filter((task) => task.status !== 'Concluida');
   const workload = teamProfiles.map((member) => ({
     ...member,
     personal: openPersonal.filter((task) => task.assignedId === member.id || task.participants?.some((participant) => participant.id === member.id)).length,
@@ -599,11 +643,20 @@ function ReportsView({ metrics, clientTasks, personalTasks, clients, teamProfile
   return (
     <section className="routeSurface">
       <section className="metrics">{metrics.map((metric) => <Metric key={metric.label} metric={metric} />)}</section>
+      <section className="reportPeriod">
+        <div><h2>Periodo do relatorio</h2><p>Veja atividades executadas, abertas e atrasadas dentro do intervalo.</p></div>
+        <label>Inicio<input type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} /></label>
+        <label>Fim<input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} /></label>
+      </section>
       <div className="reportGrid">
-        <article><h2>Pedidos com restricao</h2><strong className="largeNumber">{blockedOrders.length}</strong><span>na operacao</span></article>
-        <article><h2>Pedidos finalizados</h2><strong className="largeNumber">{doneOrders.length}</strong><span>no fluxo</span></article>
-        <article><h2>Atividades abertas</h2><strong className="largeNumber">{openPersonal.length}</strong><span>na agenda</span></article>
-        <article><h2>Clientes cadastrados</h2><strong className="largeNumber">{clients.length}</strong><span>ativos na base</span></article>
+        <article><h2>Executadas no periodo</h2><strong className="largeNumber">{executedTasks.length}</strong><span>finalizadas entre as datas</span></article>
+        <article><h2>Ficaram atrasadas</h2><strong className="largeNumber">{delayedTasks.length}</strong><span>venciam no periodo</span></article>
+        <article><h2>Abertas no periodo</h2><strong className="largeNumber">{openPeriodTasks.length}</strong><span>criadas, vencendo ou ainda abertas</span></article>
+        <article><h2>Pedidos finalizados</h2><strong className="largeNumber">{doneOrders.length}</strong><span>no fluxo geral</span></article>
+      </div>
+      <div className="reportGrid operationalGrid">
+        <article><h2>Atividades executadas</h2>{executedTasks.slice(0, 8).map((task) => <p className="listLine" key={task.id}><strong>{task.title}</strong><span>{task.assignedName}</span></p>)}{!executedTasks.length && <p className="emptyState">Nenhuma atividade finalizada neste periodo.</p>}</article>
+        <article><h2>Atividades atrasadas</h2>{delayedTasks.slice(0, 8).map((task) => <p className="listLine" key={task.id}><strong>{task.title}</strong><span>{task.dueDate ? formatDate(task.dueDate) : 'Sem prazo'}</span></p>)}{!delayedTasks.length && <p className="emptyState">Nenhuma atividade atrasada neste periodo.</p>}</article>
       </div>
       <div className="reportGrid operationalGrid">
         <article><h2>Carga por colaborador</h2>{workload.map((item) => <p className="listLine" key={item.id}><strong>{item.name}</strong><span>{item.personal} atividades</span></p>)}{!workload.length && <p className="emptyState">Equipe ainda nao carregada.</p>}</article>
@@ -722,7 +775,7 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
   const filteredTasks = personalTasks.filter((task) => {
     const isParticipant = task.participants?.some((item) => item.id === ownerFilter);
     const matchesOwner = canManageAll && ownerFilter !== 'all' ? task.assignedId === ownerFilter || isParticipant : true;
-    const matchesDate = dateFilter ? task.dueDate === dateFilter : true;
+    const matchesDate = dateFilter ? taskMatchesAgendaDate(task, dateFilter) : true;
     return matchesOwner && matchesDate;
   });
   const columns = buildAgendaColumns(filteredTasks);

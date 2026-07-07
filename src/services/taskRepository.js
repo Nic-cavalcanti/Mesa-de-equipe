@@ -15,6 +15,9 @@ function mapPersonalTask(row) {
     description: row.description ?? '',
     comments: row.comments ?? '',
     dueDate: row.due_date ?? '',
+    createdAt: row.created_at ?? '',
+    updatedAt: row.updated_at ?? '',
+    completedAt: row.completed_at ?? '',
     status: row.status,
     priority: row.priority,
     attachmentName: row.attachment_name ?? '',
@@ -144,7 +147,7 @@ export async function loadPersonalTasks() {
 
   const { data, error } = await supabase
     .from('personal_tasks')
-    .select('id, title, description, comments, due_date, status, priority, attachment_name, attachment_url, extension_due_date, extension_reason, extension_status, extension_requested_at, extension_requested_by, extension_decided_at, extension_decided_by, assigned_profile_id, assigned_profile:profiles!personal_tasks_assigned_profile_id_fkey(full_name), participants:personal_task_participants(profile_id, profile:profiles!personal_task_participants_profile_id_fkey(full_name))')
+    .select('id, title, description, comments, due_date, created_at, updated_at, completed_at, status, priority, attachment_name, attachment_url, extension_due_date, extension_reason, extension_status, extension_requested_at, extension_requested_by, extension_decided_at, extension_decided_by, assigned_profile_id, assigned_profile:profiles!personal_tasks_assigned_profile_id_fkey(full_name), participants:personal_task_participants(profile_id, profile:profiles!personal_task_participants_profile_id_fkey(full_name))')
     .order('due_date', { ascending: true, nullsFirst: false });
 
   if (error) throw error;
@@ -177,9 +180,14 @@ export async function createPersonalTask(task) {
 }
 
 export async function updatePersonalTaskStatus(id, status) {
+  const update = {
+    status,
+    completed_at: status === 'Concluida' ? new Date().toISOString() : null
+  };
+
   const { error } = await supabase
     .from('personal_tasks')
-    .update({ status })
+    .update(update)
     .eq('id', id);
 
   if (error) throw error;
