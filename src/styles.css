@@ -107,3 +107,229 @@
 .recurrenceGrid{align-items:end}
 .recurrenceHint{align-self:end;margin:0;color:var(--muted);font-size:12px;line-height:1.35}
 @media(max-width:760px){.recurrenceHint{align-self:start}}
+
+
+/* premium refresh */
+:root{
+  --bg:#f6f8fb;
+  --panel:#ffffff;
+  --ink:#101828;
+  --muted:#667085;
+  --line:#e6edf3;
+  --teal:#08756f;
+  --teal-soft:#e8f6f4;
+  --danger:#d92d20;
+  --danger-soft:#fff1f0;
+  --warning:#b7791f;
+  --warning-soft:#fff8e6;
+  --info:#2f6fed;
+  --info-soft:#edf4ff;
+  --success:#0f8f62;
+  --success-soft:#edfdf5;
+}
+body{
+  background:#f6f8fb;
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+.layout{grid-template-columns:264px minmax(0,1fr)}
+.sidebar{
+  padding:24px 16px;
+  background:rgba(255,255,255,.97);
+  border-right:1px solid #e8eef5;
+  box-shadow:8px 0 28px rgba(16,24,40,.035);
+}
+.brand{
+  gap:11px;
+  padding:2px 4px 12px;
+}
+.brandMark{
+  width:38px;
+  height:38px;
+  border-radius:12px;
+  background:#08756f;
+  box-shadow:0 10px 22px rgba(8,117,111,.18);
+  letter-spacing:0;
+}
+.brand strong{font-size:15.5px;letter-spacing:0;color:#0f172a}
+.brand span{font-size:12.5px;color:#667085}
+.nav{gap:6px}
+.nav button{
+  height:44px;
+  border-radius:12px;
+  color:#475467;
+  font-weight:750;
+  transition:background .16s ease,color .16s ease,box-shadow .16s ease,transform .16s ease;
+}
+.nav button:hover{transform:translateX(1px)}
+.nav button.active,.nav button:hover{
+  background:#eef8f7;
+  color:#075f5b;
+  box-shadow:inset 0 0 0 1px #cce7e4;
+}
+.accessBox{
+  border-radius:18px;
+  border-color:#e8eef5;
+  box-shadow:0 12px 28px rgba(16,24,40,.045);
+}
+.userCard{
+  border-radius:16px;
+  border-color:#e8eef5;
+  box-shadow:0 10px 26px rgba(16,24,40,.04);
+}
+.logoutButton{
+  height:38px;
+  border-radius:11px;
+  background:#f6f8fb;
+}
+.workspace{
+  width:100%;
+  max-width:1500px;
+  margin:0 auto;
+  padding:30px;
+}
+.topbar{align-items:center;margin-bottom:16px}
+.topbar p{font-size:13px;color:#344054;margin-bottom:6px}
+.topbar h1{
+  font-size:31px;
+  line-height:1.08;
+  letter-spacing:0;
+}
+.primary{
+  height:44px;
+  border-radius:12px;
+  background:#08756f;
+  box-shadow:0 10px 22px rgba(8,117,111,.16);
+  transition:transform .16s ease,box-shadow .16s ease,background .16s ease;
+}
+.primary:hover{transform:translateY(-1px);box-shadow:0 14px 28px rgba(8,117,111,.2);background:#076b66}
+.permissionBanner,.agendaControls,.clientSearchBar,.reportPeriod{
+  border-color:#e8eef5;
+  background:rgba(255,255,255,.92);
+  box-shadow:0 8px 24px rgba(16,24,40,.035);
+}
+.metrics{gap:12px;margin-bottom:18px}
+.metric{
+  border-radius:18px;
+  padding:16px;
+  border-color:#e8eef5;
+  box-shadow:0 12px 30px rgba(16,24,40,.055);
+}
+.metric strong{font-size:25px;margin:10px 0 3px;letter-spacing:0}
+.metric span,.metric small{line-height:1.35}
+.agendaColumns{grid-template-columns:repeat(4,minmax(230px,1fr));gap:12px;align-items:start}
+.agendaColumns article,.routeSurface article{
+  border-radius:18px;
+  border-color:#e7edf4;
+  box-shadow:0 10px 24px rgba(16,24,40,.04);
+}
+.agendaColumns h2,.routeSurface h2,.orderStageGrid h2{
+  font-size:14px;
+  letter-spacing:0;
+}
+.agendaColumns h2 span,.routeSurface h2 span,.orderStageGrid h2 span{
+  min-width:24px;
+  height:24px;
+  border-radius:999px;
+  background:#f1f5f9;
+  color:#475467;
+  display:grid;
+  place-items:center;
+  font-size:12px;
+}
+.taskCard{
+  background:#fff;
+  border-color:#e7edf4;
+  border-radius:15px;
+  box-shadow:0 8px 20px rgba(16,24,40,.035);
+  border-left:3px solid #d8e2ea;
+}
+.taskCard:hover{box-shadow:0 12px 28px rgba(16,24,40,.07);border-color:#d6e1ea}
+.taskCard.doing{border-left-color:#f2b84b;background:#fffdf8}
+.taskCard.overdue{border-left-color:#e5484d;background:#fffafa}
+.taskCard.done{border-left-color:#12a87a;background:#fbfffd}
+.taskCardHead strong{font-size:13.5px!important;color:#101828!important;font-weight:850!important}
+.taskCardHead span{color:#667085!important}
+.taskCardHead small{
+  background:#f2f4f7!important;
+  color:#475467!important;
+}
+.taskCardSummary span{
+  background:#f5f7fa!important;
+  color:#475467!important;
+}
+.expandTaskButton{
+  border-radius:10px!important;
+  background:#f1f8f7!important;
+  color:#075f5b!important;
+}
+.commentModal,.floatingComposer,.authCard{
+  border-radius:20px;
+  border-color:#e8eef5;
+  box-shadow:0 28px 90px rgba(16,24,40,.18);
+}
+.clientSummaryGrid,.orderStageGrid{gap:12px}
+.summaryCard{
+  border-radius:18px;
+  min-height:112px;
+  border-color:#e7edf4;
+  box-shadow:0 10px 24px rgba(16,24,40,.04);
+}
+.summaryCard em{font-size:25px;letter-spacing:0}
+.summaryCard strong{min-height:auto;font-size:14px;color:#1d2939}
+.summaryCard.clickable:hover,.summaryCard.active{
+  transform:translateY(-1px);
+  box-shadow:0 16px 36px rgba(16,24,40,.08);
+}
+.clientListPanel,.approvalPanel,.completedOrdersBox,.detailBlock{
+  border-radius:18px;
+  border-color:#e7edf4;
+  box-shadow:0 12px 30px rgba(16,24,40,.045);
+}
+.clientListRow,.orderCard,.orderRow,.eventItem,.messageBubble{
+  border-radius:15px;
+  border-color:#e7edf4;
+}
+.clientListRow:hover,.orderRow:hover,.orderCard:hover{
+  border-color:#cbd8e3;
+  box-shadow:0 12px 26px rgba(16,24,40,.06);
+}
+.orderCard .orderClientName{font-size:16px;letter-spacing:0}
+.detailPage{background:#f6f8fb}
+.detailHeader{
+  background:rgba(246,248,251,.94);
+  border-bottom-color:#e8eef5;
+}
+.detailHeader h1{font-size:30px;letter-spacing:0}
+.detailHeader p{max-width:760px}
+.statusControl select,.agendaControls input,.clientSearchBar input,.reportPeriod input,.taskComposer input,.taskComposer select,.miniTaskForm input,.miniTaskForm select,.commentModal textarea,.orderCommentForm textarea{
+  border-color:#d8e1ea;
+  border-radius:11px;
+}
+.statusControl select:focus,.agendaControls input:focus,.clientSearchBar input:focus,.reportPeriod input:focus,.taskComposer input:focus,.taskComposer select:focus,.miniTaskForm input:focus,.miniTaskForm select:focus,.commentModal textarea:focus,.orderCommentForm textarea:focus{
+  outline:0;
+  border-color:#08756f;
+  box-shadow:0 0 0 3px rgba(8,117,111,.13);
+}
+.reportGrid article,.calendarGrid article,.orderBoard article{
+  border-radius:18px;
+}
+.approvalItem{border-radius:15px;background:#fff}
+.guidedActions button,.modalActions button[type=button],.detailsButton,.completeButton,.commentActions button,.extensionButton{
+  border-radius:11px;
+}
+@media(max-width:1180px){
+  .layout{grid-template-columns:230px minmax(0,1fr)}
+  .workspace{padding:22px}
+  .agendaColumns{grid-template-columns:repeat(2,minmax(240px,1fr))}
+}
+@media(max-width:760px){
+  .layout{display:block}
+  .sidebar{height:auto;position:static}
+  .workspace{padding:18px}
+  .topbar{align-items:flex-start}
+  .topbar h1{font-size:26px}
+  .metrics,.agendaColumns,.clientSummaryGrid,.orderStageGrid,.reportGrid,.calendarGrid,.orderBoard{grid-template-columns:1fr}
+  .primary{width:100%;justify-content:center}
+}

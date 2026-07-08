@@ -368,8 +368,8 @@ function App() {
     <div className="layout">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brandMark">M</div>
-          <div><strong>Mesa da Equipe</strong><span>Gestao por cliente</span></div>
+          <div className="brandMark">A</div>
+          <div><strong>Agenda Pronto</strong><span>Gestao simples da equipe</span></div>
         </div>
 
         <nav className="nav">
@@ -1020,7 +1020,7 @@ function getVisibleFlags(client, profile) {
 }
 
 function AuthShell({ title, text, action }) {
-  return <main className="authPage"><section className="authCard"><div className="brandMark">M</div><h1>{title}</h1><p>{text}</p>{action}</section></main>;
+  return <main className="authPage"><section className="authCard"><div className="brandMark">A</div><h1>{title}</h1><p>{text}</p>{action}</section></main>;
 }
 
 function LoginScreen({ error, onError }) {
@@ -1045,8 +1045,8 @@ function LoginScreen({ error, onError }) {
   return (
     <main className="authPage">
       <form className="authCard" onSubmit={handleSubmit}>
-        <div className="brandMark">M</div>
-        <h1>Mesa da Equipe</h1>
+        <div className="brandMark">A</div>
+        <h1>Agenda Pronto</h1>
         <p>Entre com seu acesso para visualizar clientes, pedidos e bloqueios conforme seu perfil.</p>
         <label>E-mail<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@empresa.com" required /></label>
         <label>Senha<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Sua senha" required /></label>
