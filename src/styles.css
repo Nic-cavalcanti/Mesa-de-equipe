@@ -333,3 +333,77 @@ body{
   .metrics,.agendaColumns,.clientSummaryGrid,.orderStageGrid,.reportGrid,.calendarGrid,.orderBoard{grid-template-columns:1fr}
   .primary{width:100%;justify-content:center}
 }
+
+
+/* day focus */
+.dayFocus{
+  display:grid;
+  grid-template-columns:minmax(0,1.1fr) minmax(420px,.9fr);
+  gap:14px;
+  align-items:stretch;
+  background:#fff;
+  border:1px solid #e7edf4;
+  border-radius:20px;
+  padding:16px;
+  box-shadow:0 14px 34px rgba(16,24,40,.055);
+}
+.dayFocusMain{
+  min-height:104px;
+  border-radius:16px;
+  background:#f7fbfb;
+  border:1px solid #e3efed;
+  padding:18px;
+  display:grid;
+  align-content:center;
+  gap:5px;
+}
+.dayFocusMain span{
+  color:#08756f;
+  font-size:12px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.dayFocusMain h2{
+  margin:0;
+  font-size:22px;
+  line-height:1.18;
+  color:#101828;
+  letter-spacing:0;
+}
+.dayFocusMain p{
+  margin:0;
+  color:#667085;
+  font-size:13px;
+}
+.dayFocusStats{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(92px,1fr));
+  gap:10px;
+}
+.dayFocusStats article{
+  border:1px solid #e7edf4;
+  border-radius:15px;
+  background:#fff;
+  padding:13px;
+  display:grid;
+  align-content:center;
+  gap:4px;
+}
+.dayFocusStats strong{
+  font-size:24px;
+  line-height:1;
+  color:#101828;
+}
+.dayFocusStats span{
+  color:#667085;
+  font-size:12px;
+  line-height:1.25;
+}
+.dayFocusStats .attention{
+  background:#fffafa;
+  border-color:#ffd7d7;
+}
+.dayFocusStats .attention strong{color:#d92d20}
+@media(max-width:1080px){.dayFocus{grid-template-columns:1fr}.dayFocusStats{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){.dayFocusStats{grid-template-columns:1fr}.dayFocusMain h2{font-size:19px}}

@@ -590,6 +590,13 @@ function dateOnly(value) {
   return String(value).slice(0, 10);
 }
 
+function getTodayKey() {
+  const today = new Date();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return today.getFullYear() + '-' + month + '-' + day;
+}
+
 function taskCompletionDate(task) {
   return dateOnly(task.completedAt || (task.status === 'Concluida' ? task.updatedAt : ''));
 }
@@ -772,12 +779,12 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
   const canManageAll = profile.id === 'manager';
   const assignableProfiles = canManageAll ? teamProfiles : teamProfiles.filter((item) => item.id === currentProfile?.id);
   const defaultAssignedId = form.assignedId || currentProfile?.id || assignableProfiles[0]?.id || '';
-  const filteredTasks = personalTasks.filter((task) => {
+  const ownerTasks = personalTasks.filter((task) => {
     const isParticipant = task.participants?.some((item) => item.id === ownerFilter);
-    const matchesOwner = canManageAll && ownerFilter !== 'all' ? task.assignedId === ownerFilter || isParticipant : true;
-    const matchesDate = dateFilter ? taskMatchesAgendaDate(task, dateFilter) : true;
-    return matchesOwner && matchesDate;
+    return canManageAll && ownerFilter !== 'all' ? task.assignedId === ownerFilter || isParticipant : true;
   });
+  const filteredTasks = ownerTasks.filter((task) => dateFilter ? taskMatchesAgendaDate(task, dateFilter) : true);
+  const todayFocus = buildDayFocus(ownerTasks);
   const columns = buildAgendaColumns(filteredTasks);
   const pendingExtensions = personalTasks.filter((task) => task.extensionStatus === 'Solicitada');
 
@@ -837,6 +844,20 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
         </div>
       )}
 
+      <section className="dayFocus">
+        <div className="dayFocusMain">
+          <span>Foco do dia</span>
+          <h2>{todayFocus.primary ? todayFocus.primary.title : 'Agenda tranquila hoje'}</h2>
+          <p>{todayFocus.primary ? todayFocus.primary.assignedName + ' - ' + dueText(todayFocus.primary) : 'Sem atividade vencendo hoje ou atrasada para esta visualizacao.'}</p>
+        </div>
+        <div className="dayFocusStats">
+          <article><strong>{todayFocus.todayOpen}</strong><span>para hoje</span></article>
+          <article><strong>{todayFocus.doing}</strong><span>em andamento</span></article>
+          <article className={todayFocus.overdue ? 'attention' : ''}><strong>{todayFocus.overdue}</strong><span>atrasada(s)</span></article>
+          <article><strong>{todayFocus.doneToday}</strong><span>finalizada(s) hoje</span></article>
+        </div>
+      </section>
+
       <section className="agendaControls">
         <label>Calendario<input type="date" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} /></label>
         {dateFilter && <button type="button" onClick={() => setDateFilter('')}>Limpar data</button>}
@@ -874,6 +895,25 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
       </div>
     </section>
   );
+}
+
+function buildDayFocus(tasks) {
+  const today = getTodayKey();
+  const openTasks = tasks.filter((task) => task.status !== 'Concluida');
+  const todayOpenTasks = openTasks.filter((task) => task.dueDate === today);
+  const doingTasks = openTasks.filter((task) => task.status === 'Em andamento');
+  const overdueTasks = openTasks.filter(isOverdue);
+  const doneTodayTasks = tasks.filter((task) => task.status === 'Concluida' && taskCompletionDate(task) === today);
+  const priorityRank = { Alta: 0, Media: 1, Baixa: 2 };
+  const byPriorityAndDate = (a, b) => (priorityRank[a.priority] ?? 3) - (priorityRank[b.priority] ?? 3) || String(a.dueDate || '').localeCompare(String(b.dueDate || ''));
+  const primary = [...overdueTasks, ...todayOpenTasks, ...doingTasks].sort(byPriorityAndDate)[0] || null;
+  return {
+    primary,
+    todayOpen: todayOpenTasks.length,
+    doing: doingTasks.length,
+    overdue: overdueTasks.length,
+    doneToday: doneTodayTasks.length
+  };
 }
 
 function buildAgendaColumns(tasks) {
