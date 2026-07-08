@@ -633,8 +633,9 @@ function taskMatchesAgendaDate(task, date) {
   if (!date) return true;
   const createdAt = dateOnly(task.createdAt);
   const completedAt = taskCompletionDate(task);
-  if (task.dueDate === date || createdAt === date || completedAt === date) return true;
-  return task.status !== 'Concluida';
+  if (task.dueDate === date || completedAt === date) return true;
+  if (!task.dueDate && createdAt === date) return true;
+  return false;
 }
 
 function dateInPeriod(value, start, end) {
@@ -802,7 +803,7 @@ function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, o
 
 function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, showTaskForm, onCloseTaskForm, onCreate, onComplete, onUpdateStatus, onSaveComment, onRequestExtension, onReviewExtension, onDelete }) {
   const [ownerFilter, setOwnerFilter] = useState('all');
-  const [dateFilter, setDateFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState(getTodayKey());
   const [form, setForm] = useState({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId: currentProfile?.id ?? '', participantIds: [], attachmentUrl: '', attachmentName: '', recurrenceRule: 'none', recurrenceUntil: '' });
   const canManageAll = profile.id === 'manager';
   const assignableProfiles = canManageAll ? teamProfiles : teamProfiles.filter((item) => item.id === currentProfile?.id);
@@ -857,7 +858,7 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
             <div className="taskFormGrid recurrenceGrid">
               <label>Repetir<select value={form.recurrenceRule} onChange={(event) => updateForm('recurrenceRule', event.target.value)}><option value="none">Nao repetir</option><option value="daily">Diariamente</option><option value="weekly">Semanalmente</option><option value="monthly">Mensalmente</option></select></label>
               {form.recurrenceRule !== 'none' && <label>Repetir ate (opcional)<input type="date" value={form.recurrenceUntil} onChange={(event) => updateForm('recurrenceUntil', event.target.value)} /></label>}
-              {form.recurrenceRule !== 'none' && <p className="recurrenceHint">Para repetir todo dia a partir de hoje, use hoje como primeiro prazo. Se deixar a data final vazia, o sistema cria ate 30 ocorrencias nos proximos 90 dias.</p>}
+              {form.recurrenceRule !== 'none' && <p className="recurrenceHint">Para repetir todo dia a partir de hoje, use hoje como primeiro prazo. As proximas datas ficam nos dias futuros e aparecem quando voce muda o calendario.</p>}
             </div>
             <fieldset className="participantPicker">
               <legend>Convidados</legend>
@@ -888,7 +889,8 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
 
       <section className="agendaControls">
         <label>Calendario<input type="date" value={dateFilter} onChange={(event) => setDateFilter(event.target.value)} /></label>
-        {dateFilter && <button type="button" onClick={() => setDateFilter('')}>Limpar data</button>}
+        {dateFilter !== getTodayKey() && <button type="button" onClick={() => setDateFilter(getTodayKey())}>Hoje</button>}
+        {dateFilter && <button type="button" onClick={() => setDateFilter('')}>Ver todas</button>}
         {canManageAll && (
           <div className="agendaFilter">
             <span>Ver agenda</span>
