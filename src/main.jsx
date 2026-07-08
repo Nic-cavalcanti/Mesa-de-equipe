@@ -4,8 +4,8 @@ import { AlertTriangle, CalendarDays, CheckCircle2, CircleDollarSign, ClipboardL
 import { clients as fallbackClients, team } from './data.js';
 import { isSupabaseConfigured } from './lib/supabase.js';
 import { getInitialSession, listenToAuthChanges, loadCurrentProfile, signInWithPassword, signOut } from './services/authRepository.js';
-import { createClientRecord, loadClientsFromDatabase } from './services/clientRepository.js';
-import { addClientTaskComment, addPersonalTaskComment, applyClientTaskAction, completeClientTask, completePersonalTask, createClientTask, createPersonalTask, loadClientTaskEvents, loadClientTasks, loadPersonalTasks, loadTeamProfiles, requestPersonalTaskExtension, reviewPersonalTaskExtension, updatePersonalTaskStatus } from './services/taskRepository.js';
+import { createClientRecord, deleteClientRecord, loadClientsFromDatabase } from './services/clientRepository.js';
+import { addClientTaskComment, addPersonalTaskComment, applyClientTaskAction, completeClientTask, completePersonalTask, createClientTask, createPersonalTask, deleteClientTask, deletePersonalTask, loadClientTaskEvents, loadClientTasks, loadPersonalTasks, loadTeamProfiles, requestPersonalTaskExtension, reviewPersonalTaskExtension, updatePersonalTaskStatus } from './services/taskRepository.js';
 import './styles.css';
 
 const profilePermissions = {
@@ -220,6 +220,16 @@ function App() {
     setShowClientForm(false);
   }
 
+  async function handleDeleteClient(id) {
+    if (profile.id !== 'manager') return;
+    if (!window.confirm('Excluir este cliente? Os pedidos ligados a ele tambem serao removidos.')) return;
+    await deleteClientRecord(id);
+    await refreshClients();
+    await refreshTasks();
+    setSelectedTaskId(null);
+    setDrawerOpen(false);
+  }
+
   async function handleCreatePersonalTask(task) {
     await createPersonalTask({ ...task, createdBy: currentProfile.id });
     await refreshTasks();
@@ -268,6 +278,13 @@ function App() {
     await refreshTasks();
   }
 
+  async function handleDeletePersonalTask(id) {
+    if (profile.id !== 'manager') return;
+    if (!window.confirm('Excluir esta atividade?')) return;
+    await deletePersonalTask(id);
+    await refreshTasks();
+  }
+
   async function handleCreateClientTask(task) {
     await createClientTask({ ...task, createdBy: currentProfile.id });
     await refreshTasks();
@@ -277,6 +294,14 @@ function App() {
     await completeClientTask(id, nextProfileId);
     await refreshTasks();
     if (!nextProfileId) closeDetail();
+  }
+
+  async function handleDeleteClientTask(id) {
+    if (profile.id !== 'manager') return;
+    if (!window.confirm('Excluir este pedido/atividade?')) return;
+    await deleteClientTask(id);
+    await refreshTasks();
+    setSelectedTaskId(null);
   }
 
   async function handleAddClientTaskComment(id, comment) {
@@ -444,6 +469,7 @@ function App() {
           onSavePersonalTaskComment={handleSavePersonalTaskComment}
           onRequestPersonalTaskExtension={handleRequestPersonalTaskExtension}
           onReviewPersonalTaskExtension={handleReviewPersonalTaskExtension}
+          onDeletePersonalTask={handleDeletePersonalTask}
         />
       </main>
 
@@ -459,6 +485,8 @@ function App() {
         onCompleteClientTask={handleCompleteClientTask}
         onAddClientTaskComment={handleAddClientTaskComment}
         onApplyClientTaskAction={handleApplyClientTaskAction}
+        onDeleteClient={handleDeleteClient}
+        onDeleteClientTask={handleDeleteClientTask}
         open={drawerOpen}
         onClose={closeDetail}
       />
@@ -467,9 +495,9 @@ function App() {
   );
 }
 
-function MainContent({ route, metrics, filter, setFilter, visibleClients, selectedId, setSelectedId, openClient, openOrderTask, profile, currentProfile, teamProfiles, personalTasks, clientTasks, showTaskForm, onCloseTaskForm, onCreatePersonalTask, onCompletePersonalTask, onUpdatePersonalTaskStatus, onSavePersonalTaskComment, onRequestPersonalTaskExtension, onReviewPersonalTaskExtension }) {
+function MainContent({ route, metrics, filter, setFilter, visibleClients, selectedId, setSelectedId, openClient, openOrderTask, profile, currentProfile, teamProfiles, personalTasks, clientTasks, showTaskForm, onCloseTaskForm, onCreatePersonalTask, onCompletePersonalTask, onUpdatePersonalTaskStatus, onSavePersonalTaskComment, onRequestPersonalTaskExtension, onReviewPersonalTaskExtension, onDeletePersonalTask }) {
   if (route === 'agenda') {
-    return <AgendaView profile={profile} currentProfile={currentProfile} teamProfiles={teamProfiles} personalTasks={personalTasks} showTaskForm={showTaskForm} onCloseTaskForm={onCloseTaskForm} onCreate={onCreatePersonalTask} onComplete={onCompletePersonalTask} onUpdateStatus={onUpdatePersonalTaskStatus} onSaveComment={onSavePersonalTaskComment} onRequestExtension={onRequestPersonalTaskExtension} onReviewExtension={onReviewPersonalTaskExtension} />;
+    return <AgendaView profile={profile} currentProfile={currentProfile} teamProfiles={teamProfiles} personalTasks={personalTasks} showTaskForm={showTaskForm} onCloseTaskForm={onCloseTaskForm} onCreate={onCreatePersonalTask} onComplete={onCompletePersonalTask} onUpdateStatus={onUpdatePersonalTaskStatus} onSaveComment={onSavePersonalTaskComment} onRequestExtension={onRequestPersonalTaskExtension} onReviewExtension={onReviewPersonalTaskExtension} onDelete={onDeletePersonalTask} />;
   }
 
   if (route === 'orders') {
@@ -772,7 +800,7 @@ function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, o
   );
 }
 
-function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, showTaskForm, onCloseTaskForm, onCreate, onComplete, onUpdateStatus, onSaveComment, onRequestExtension, onReviewExtension }) {
+function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, showTaskForm, onCloseTaskForm, onCreate, onComplete, onUpdateStatus, onSaveComment, onRequestExtension, onReviewExtension, onDelete }) {
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
   const [form, setForm] = useState({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId: currentProfile?.id ?? '', participantIds: [], attachmentUrl: '', attachmentName: '', recurrenceRule: 'none', recurrenceUntil: '' });
@@ -820,7 +848,7 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
             <label>Observacoes<input value={form.description} onChange={(event) => updateForm('description', event.target.value)} placeholder="Contexto rapido" /></label>
             <label>Anexo<input value={form.attachmentUrl} onChange={(event) => updateForm('attachmentUrl', event.target.value)} placeholder="Link do arquivo" /></label>
             <div className="taskFormGrid">
-              <label>Prazo<input type="date" value={form.dueDate} onChange={(event) => updateForm('dueDate', event.target.value)} required={form.recurrenceRule !== 'none'} /></label>
+              <label>{form.recurrenceRule !== 'none' ? 'Primeiro prazo' : 'Prazo'}<input type="date" value={form.dueDate} onChange={(event) => updateForm('dueDate', event.target.value)} required={form.recurrenceRule !== 'none'} />{form.recurrenceRule !== 'none' && <small>A repeticao comeca nesta data.</small>}</label>
               <label>Prioridade<select value={form.priority} onChange={(event) => updateForm('priority', event.target.value)}><option>Alta</option><option>Media</option><option>Baixa</option></select></label>
               {canManageAll && (
                 <label>Responsavel<select value={defaultAssignedId} onChange={(event) => updateForm('assignedId', event.target.value)}>{assignableProfiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
@@ -828,8 +856,8 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
             </div>
             <div className="taskFormGrid recurrenceGrid">
               <label>Repetir<select value={form.recurrenceRule} onChange={(event) => updateForm('recurrenceRule', event.target.value)}><option value="none">Nao repetir</option><option value="daily">Diariamente</option><option value="weekly">Semanalmente</option><option value="monthly">Mensalmente</option></select></label>
-              {form.recurrenceRule !== 'none' && <label>Ate quando<input type="date" value={form.recurrenceUntil} onChange={(event) => updateForm('recurrenceUntil', event.target.value)} /></label>}
-              {form.recurrenceRule !== 'none' && <p className="recurrenceHint">Se nao informar uma data final, o sistema cria as proximas ocorrencias por ate 90 dias.</p>}
+              {form.recurrenceRule !== 'none' && <label>Repetir ate (opcional)<input type="date" value={form.recurrenceUntil} onChange={(event) => updateForm('recurrenceUntil', event.target.value)} /></label>}
+              {form.recurrenceRule !== 'none' && <p className="recurrenceHint">Para repetir todo dia a partir de hoje, use hoje como primeiro prazo. Se deixar a data final vazia, o sistema cria ate 30 ocorrencias nos proximos 90 dias.</p>}
             </div>
             <fieldset className="participantPicker">
               <legend>Convidados</legend>
@@ -888,7 +916,7 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
         {columns.map((column) => (
           <article key={column.id} className={'agendaColumn ' + column.id}>
             <h2>{column.label} <span>{column.tasks.length}</span></h2>
-            {column.tasks.map((task) => <TaskCard key={task.id} task={task} canComplete canReviewExtension={canManageAll} onComplete={() => onComplete(task.id)} onUpdateStatus={onUpdateStatus} onSaveComment={onSaveComment} onRequestExtension={onRequestExtension} onReviewExtension={onReviewExtension} />)}
+            {column.tasks.map((task) => <TaskCard key={task.id} task={task} canComplete canReviewExtension={canManageAll} onComplete={() => onComplete(task.id)} onUpdateStatus={onUpdateStatus} onSaveComment={onSaveComment} onRequestExtension={onRequestExtension} onReviewExtension={onReviewExtension} onDelete={canManageAll ? () => onDelete(task.id) : null} />)}
             {!column.tasks.length && <p className="emptyState">Nada por aqui.</p>}
           </article>
         ))}
@@ -951,7 +979,7 @@ function formatDate(value) {
   return new Date(value + 'T00:00:00').toLocaleDateString('pt-BR');
 }
 
-function TaskCard({ task, canComplete, canReviewExtension, onComplete, onUpdateStatus, onSaveComment, onRequestExtension, onReviewExtension }) {
+function TaskCard({ task, canComplete, canReviewExtension, onComplete, onUpdateStatus, onSaveComment, onRequestExtension, onReviewExtension, onDelete }) {
   const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState(task.comments ?? '');
   const [extensionReason, setExtensionReason] = useState('');
@@ -1029,6 +1057,7 @@ function TaskCard({ task, canComplete, canReviewExtension, onComplete, onUpdateS
           {onSaveComment && <div className="commentActions"><button type="button" onClick={() => setCommentOpen(true)}>{task.comments ? 'Editar comentario' : 'Comentar'}</button>{savedComment && <span>Comentario salvo</span>}</div>}
           {onRequestExtension && task.status !== 'Concluida' && <button type="button" className="extensionButton" onClick={() => setExtensionOpen(true)}>Solicitar prorrogacao</button>}
           {canComplete && task.status !== 'Concluida' && <button type="button" className="completeButton" onClick={onComplete}><CheckCircle2 size={14} />Finalizar</button>}
+          {onDelete && <button type="button" className="deleteButton" onClick={onDelete}>Excluir atividade</button>}
         </div>
       )}
 
@@ -1140,19 +1169,19 @@ function LoadRow({ member }) {
   return <div className="loadRow"><span>{member.name}</span><div><i style={{ width: member.load + '%' }} /></div><strong>{member.load}%</strong></div>;
 }
 
-function ClientPanel({ client, profile, clientTasks, teamProfiles, onCreateClientTask, selectedTask, selectedTaskEvents, onOpenTask, onCompleteClientTask, onAddClientTaskComment, onApplyClientTaskAction, open, onClose }) {
+function ClientPanel({ client, profile, clientTasks, teamProfiles, onCreateClientTask, selectedTask, selectedTaskEvents, onOpenTask, onCompleteClientTask, onAddClientTaskComment, onApplyClientTaskAction, onDeleteClient, onDeleteClientTask, open, onClose }) {
   const visibleFlags = getVisibleFlags(client, profile);
   if (!open) return null;
 
   if (selectedTask) {
-    return <OrderDetailPage task={selectedTask} client={client} teamProfiles={teamProfiles} events={selectedTaskEvents} onBack={() => onOpenTask(null)} onClose={onClose} onComplete={onCompleteClientTask} onAddComment={onAddClientTaskComment} onApplyAction={onApplyClientTaskAction} />;
+    return <OrderDetailPage task={selectedTask} client={client} teamProfiles={teamProfiles} events={selectedTaskEvents} onBack={() => onOpenTask(null)} onClose={onClose} onComplete={onCompleteClientTask} onAddComment={onAddClientTaskComment} onApplyAction={onApplyClientTaskAction} onDelete={profile.id === 'manager' ? onDeleteClientTask : null} />;
   }
 
   return (
     <section className="detailPage">
       <header className="detailHeader">
         <div><span>Cliente</span><h1>{client.name}</h1><p>{client.clientCode || 'Sem ID'} · {client.cnpj || 'CNPJ nao informado'} · {client.segment}</p></div>
-        <button className="closePanel" type="button" onClick={onClose}><X size={18} /></button>
+        <div className="detailActions">{profile.id === 'manager' && <button type="button" className="dangerTextButton" onClick={() => onDeleteClient(client.id)}>Excluir cliente</button>}<button className="closePanel" type="button" onClick={onClose}><X size={18} /></button></div>
       </header>
 
       <div className="detailLayout">
@@ -1194,7 +1223,7 @@ function OrderRow({ task, onOpen }) {
   );
 }
 
-function OrderDetailPage({ task, client, teamProfiles, events, onBack, onClose, onComplete, onAddComment, onApplyAction }) {
+function OrderDetailPage({ task, client, teamProfiles, events, onBack, onClose, onComplete, onAddComment, onApplyAction, onDelete }) {
   const [nextProfileId, setNextProfileId] = useState(task.nextProfileId || '');
   const [forwarding, setForwarding] = useState(false);
   const [comment, setComment] = useState('');
@@ -1240,7 +1269,7 @@ function OrderDetailPage({ task, client, teamProfiles, events, onBack, onClose, 
     <section className="detailPage">
       <header className="detailHeader">
         <div><span>Pedido {task.orderNumber || '-'}</span><h1>{task.title}</h1><p>{client.name} · {task.restrictionStatus}</p></div>
-        <div className="detailActions"><button type="button" onClick={onBack}>Voltar ao cliente</button><button className="closePanel" type="button" onClick={onClose}><X size={18} /></button></div>
+        <div className="detailActions"><button type="button" onClick={onBack}>Voltar ao cliente</button>{onDelete && <button type="button" className="dangerTextButton" onClick={() => onDelete(task.id)}>Excluir pedido</button>}<button className="closePanel" type="button" onClick={onClose}><X size={18} /></button></div>
       </header>
 
       <div className="detailLayout">

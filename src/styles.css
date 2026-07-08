@@ -407,3 +407,32 @@ body{
 .dayFocusStats .attention strong{color:#d92d20}
 @media(max-width:1080px){.dayFocus{grid-template-columns:1fr}.dayFocusStats{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:560px){.dayFocusStats{grid-template-columns:1fr}.dayFocusMain h2{font-size:19px}}
+
+
+/* deletion controls */
+.deleteButton,.dangerTextButton{
+  border:1px solid #ffd7d7;
+  border-radius:11px;
+  background:#fffafa;
+  color:#c0363b;
+  font-weight:900;
+}
+.deleteButton{
+  width:100%;
+  min-height:34px;
+  margin-top:4px;
+}
+.dangerTextButton{
+  min-height:36px;
+  padding:0 12px;
+}
+.deleteButton:hover,.dangerTextButton:hover{
+  background:#fff1f0;
+  border-color:#ffb8b8;
+}
+.taskComposer label small{
+  color:#667085;
+  font-size:12px;
+  font-weight:700;
+  line-height:1.3;
+}

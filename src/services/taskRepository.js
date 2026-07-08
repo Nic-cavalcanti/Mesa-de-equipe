@@ -305,6 +305,15 @@ export async function completePersonalTask(id) {
   return updatePersonalTaskStatus(id, 'Concluida');
 }
 
+export async function deletePersonalTask(id) {
+  const { error } = await supabase
+    .from('personal_tasks')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
+}
+
 export async function createClientTask(task) {
   const { data, error } = await supabase.from('client_tasks').insert({
     client_id: task.clientId,
@@ -435,4 +444,14 @@ export async function applyClientTaskAction(taskId, action) {
   if (error) throw error;
 
   await recordClientTaskEvent(taskId, 'acao', selected.description, userData.user.id);
+}
+
+
+export async function deleteClientTask(id) {
+  const { error } = await supabase
+    .from('client_tasks')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
 }

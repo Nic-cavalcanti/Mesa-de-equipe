@@ -255,6 +255,9 @@ drop policy if exists "profiles can update own profile" on profiles;
 drop policy if exists "managers can manage profiles" on profiles;
 drop policy if exists "clients read by role" on clients;
 drop policy if exists "clients write by manager" on clients;
+drop policy if exists "clients insert authenticated" on clients;
+drop policy if exists "clients update authenticated" on clients;
+drop policy if exists "clients delete by manager" on clients;
 drop policy if exists "related contacts read by visible client" on client_contacts;
 drop policy if exists "related flags read by visible client" on client_flags;
 drop policy if exists "related processes read by visible client" on processes;
@@ -268,10 +271,16 @@ drop policy if exists "personal tasks private read" on personal_tasks;
 drop policy if exists "personal task participants read" on personal_task_participants;
 drop policy if exists "personal task participants write" on personal_task_participants;
 drop policy if exists "personal tasks private write" on personal_tasks;
+drop policy if exists "personal tasks private insert" on personal_tasks;
+drop policy if exists "personal tasks private update" on personal_tasks;
+drop policy if exists "personal tasks delete by manager" on personal_tasks;
 drop policy if exists "client tasks shared read" on client_tasks;
 drop policy if exists "client task events shared read" on client_task_events;
 drop policy if exists "client task events shared write" on client_task_events;
 drop policy if exists "client tasks shared write" on client_tasks;
+drop policy if exists "client tasks shared insert" on client_tasks;
+drop policy if exists "client tasks shared update" on client_tasks;
+drop policy if exists "client tasks delete by manager" on client_tasks;
 
 create policy "profiles can read own profile" on profiles for select using (id = auth.uid());
 create policy "managers can read all profiles" on profiles for select using (get_app_user_role() = 'manager');
@@ -280,7 +289,9 @@ create policy "managers can manage profiles" on profiles for all using (get_app_
 
 create policy "clients read by role" on clients for select using (auth.uid() is not null);
 
-create policy "clients write by manager" on clients for all using (auth.uid() is not null) with check (auth.uid() is not null);
+create policy "clients insert authenticated" on clients for insert with check (auth.uid() is not null);
+create policy "clients update authenticated" on clients for update using (auth.uid() is not null) with check (auth.uid() is not null);
+create policy "clients delete by manager" on clients for delete using (get_app_user_role() = 'manager');
 
 create policy "related contacts read by visible client" on client_contacts for select using (exists (select 1 from clients c where c.id = client_id));
 create policy "related flags read by visible client" on client_flags for select using (exists (select 1 from clients c where c.id = client_id));
@@ -307,7 +318,9 @@ create policy "personal tasks private read" on personal_tasks for select using (
   or get_app_user_role() = 'manager'
 );
 
-create policy "personal tasks private write" on personal_tasks for all using (
+create policy "personal tasks private insert" on personal_tasks for insert with check (auth.uid() is not null);
+
+create policy "personal tasks private update" on personal_tasks for update using (
   assigned_profile_id = auth.uid()
   or created_by = auth.uid()
   or exists (select 1 from personal_task_participants p where p.personal_task_id = id and p.profile_id = auth.uid())
@@ -319,11 +332,15 @@ create policy "personal tasks private write" on personal_tasks for all using (
   or get_app_user_role() = 'manager'
 );
 
+create policy "personal tasks delete by manager" on personal_tasks for delete using (get_app_user_role() = 'manager');
+
 create policy "personal task participants read" on personal_task_participants for select using (auth.uid() is not null);
 
 create policy "personal task participants write" on personal_task_participants for all using (auth.uid() is not null) with check (auth.uid() is not null);
 
 create policy "client tasks shared read" on client_tasks for select using (auth.uid() is not null);
-create policy "client tasks shared write" on client_tasks for all using (auth.uid() is not null) with check (auth.uid() is not null);
+create policy "client tasks shared insert" on client_tasks for insert with check (auth.uid() is not null);
+create policy "client tasks shared update" on client_tasks for update using (auth.uid() is not null) with check (auth.uid() is not null);
+create policy "client tasks delete by manager" on client_tasks for delete using (get_app_user_role() = 'manager');
 create policy "client task events shared read" on client_task_events for select using (auth.uid() is not null);
 create policy "client task events shared write" on client_task_events for insert with check (auth.uid() is not null);

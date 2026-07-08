@@ -130,3 +130,15 @@ export async function createClientRecord(client) {
 
   if (error) throw error;
 }
+
+
+export async function deleteClientRecord(id) {
+  if (!isSupabaseConfigured) throw new Error('Supabase nao configurado.');
+
+  const { error } = await supabase
+    .from('clients')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw error;
+}
