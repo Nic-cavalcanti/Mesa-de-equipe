@@ -103,3 +103,7 @@
 .reportPeriod label{display:grid;gap:6px;color:#344054;font-size:12px;font-weight:900}
 .reportPeriod input{height:38px;border:1px solid #d9e0e7;border-radius:10px;padding:0 10px;color:#344054}
 @media(max-width:760px){.reportPeriod,.reportPeriod label{display:grid;width:100%}.reportPeriod div{margin-right:0}}
+
+.recurrenceGrid{align-items:end}
+.recurrenceHint{align-self:end;margin:0;color:var(--muted);font-size:12px;line-height:1.35}
+@media(max-width:760px){.recurrenceHint{align-self:start}}

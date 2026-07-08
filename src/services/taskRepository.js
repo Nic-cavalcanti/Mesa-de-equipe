@@ -18,6 +18,9 @@ function mapPersonalTask(row) {
     createdAt: row.created_at ?? '',
     updatedAt: row.updated_at ?? '',
     completedAt: row.completed_at ?? '',
+    recurrenceGroupId: row.recurrence_group_id ?? '',
+    recurrenceRule: row.recurrence_rule ?? 'none',
+    recurrenceUntil: row.recurrence_until ?? '',
     status: row.status,
     priority: row.priority,
     attachmentName: row.attachment_name ?? '',
@@ -147,32 +150,81 @@ export async function loadPersonalTasks() {
 
   const { data, error } = await supabase
     .from('personal_tasks')
-    .select('id, title, description, comments, due_date, created_at, updated_at, completed_at, status, priority, attachment_name, attachment_url, extension_due_date, extension_reason, extension_status, extension_requested_at, extension_requested_by, extension_decided_at, extension_decided_by, assigned_profile_id, assigned_profile:profiles!personal_tasks_assigned_profile_id_fkey(full_name), participants:personal_task_participants(profile_id, profile:profiles!personal_task_participants_profile_id_fkey(full_name))')
+    .select('id, title, description, comments, due_date, created_at, updated_at, completed_at, recurrence_group_id, recurrence_rule, recurrence_until, status, priority, attachment_name, attachment_url, extension_due_date, extension_reason, extension_status, extension_requested_at, extension_requested_by, extension_decided_at, extension_decided_by, assigned_profile_id, assigned_profile:profiles!personal_tasks_assigned_profile_id_fkey(full_name), participants:personal_task_participants(profile_id, profile:profiles!personal_task_participants_profile_id_fkey(full_name))')
     .order('due_date', { ascending: true, nullsFirst: false });
 
   if (error) throw error;
   return data.map(mapPersonalTask);
 }
 
-export async function createPersonalTask(task) {
-  const { data, error } = await supabase.from('personal_tasks').insert({
+function addDays(date, amount) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + amount);
+  return next;
+}
+
+function addMonths(date, amount) {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + amount);
+  return next;
+}
+
+function toDateValue(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function buildPersonalTaskRows(task) {
+  const rule = task.recurrenceRule || 'none';
+  const base = {
     title: task.title,
     description: task.description || null,
     comments: task.comments || null,
-    due_date: task.dueDate || null,
     priority: task.priority,
     attachment_name: task.attachmentName || null,
     attachment_url: task.attachmentUrl || null,
     assigned_profile_id: task.assignedId,
     created_by: task.createdBy
-  }).select('id').single();
+  };
+
+  if (rule === 'none' || !task.dueDate) {
+    return [{ ...base, due_date: task.dueDate || null, recurrence_rule: 'none' }];
+  }
+
+  const start = new Date(task.dueDate + 'T00:00:00');
+  const fallbackUntil = addDays(start, 90);
+  const requestedUntil = task.recurrenceUntil ? new Date(task.recurrenceUntil + 'T00:00:00') : fallbackUntil;
+  const until = requestedUntil > fallbackUntil ? fallbackUntil : requestedUntil;
+  const groupId = crypto.randomUUID();
+  const rows = [];
+  let current = start;
+
+  while (current <= until && rows.length < 30) {
+    rows.push({
+      ...base,
+      due_date: toDateValue(current),
+      recurrence_group_id: groupId,
+      recurrence_rule: rule,
+      recurrence_until: toDateValue(until)
+    });
+
+    if (rule === 'daily') current = addDays(current, 1);
+    if (rule === 'weekly') current = addDays(current, 7);
+    if (rule === 'monthly') current = addMonths(current, 1);
+  }
+
+  return rows;
+}
+
+export async function createPersonalTask(task) {
+  const rows = buildPersonalTaskRows(task);
+  const { data, error } = await supabase.from('personal_tasks').insert(rows).select('id');
 
   if (error) throw error;
 
   const participantIds = [...new Set(task.participantIds ?? [])].filter((id) => id && id !== task.assignedId);
-  if (participantIds.length) {
+  if (participantIds.length && data?.length) {
     const { error: participantError } = await supabase.from('personal_task_participants').insert(
-      participantIds.map((profileId) => ({ personal_task_id: data.id, profile_id: profileId }))
+      data.flatMap((createdTask) => participantIds.map((profileId) => ({ personal_task_id: createdTask.id, profile_id: profileId })))
     );
 
     if (participantError) throw participantError;

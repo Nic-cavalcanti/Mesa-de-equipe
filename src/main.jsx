@@ -768,7 +768,7 @@ function ClientWorkspace({ metrics, visibleClients, selectedId, setSelectedId, o
 function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, showTaskForm, onCloseTaskForm, onCreate, onComplete, onUpdateStatus, onSaveComment, onRequestExtension, onReviewExtension }) {
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
-  const [form, setForm] = useState({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId: currentProfile?.id ?? '', participantIds: [], attachmentUrl: '', attachmentName: '' });
+  const [form, setForm] = useState({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId: currentProfile?.id ?? '', participantIds: [], attachmentUrl: '', attachmentName: '', recurrenceRule: 'none', recurrenceUntil: '' });
   const canManageAll = profile.id === 'manager';
   const assignableProfiles = canManageAll ? teamProfiles : teamProfiles.filter((item) => item.id === currentProfile?.id);
   const defaultAssignedId = form.assignedId || currentProfile?.id || assignableProfiles[0]?.id || '';
@@ -799,7 +799,7 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
     event.preventDefault();
     const assignedId = canManageAll ? defaultAssignedId : currentProfile.id;
     await onCreate({ ...form, assignedId });
-    setForm({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId, participantIds: [], attachmentUrl: '', attachmentName: '' });
+    setForm({ title: '', description: '', comments: '', dueDate: '', priority: 'Media', assignedId, participantIds: [], attachmentUrl: '', attachmentName: '', recurrenceRule: 'none', recurrenceUntil: '' });
     onCloseTaskForm();
   }
 
@@ -813,11 +813,16 @@ function AgendaView({ profile, currentProfile, teamProfiles, personalTasks, show
             <label>Observacoes<input value={form.description} onChange={(event) => updateForm('description', event.target.value)} placeholder="Contexto rapido" /></label>
             <label>Anexo<input value={form.attachmentUrl} onChange={(event) => updateForm('attachmentUrl', event.target.value)} placeholder="Link do arquivo" /></label>
             <div className="taskFormGrid">
-              <label>Prazo<input type="date" value={form.dueDate} onChange={(event) => updateForm('dueDate', event.target.value)} /></label>
+              <label>Prazo<input type="date" value={form.dueDate} onChange={(event) => updateForm('dueDate', event.target.value)} required={form.recurrenceRule !== 'none'} /></label>
               <label>Prioridade<select value={form.priority} onChange={(event) => updateForm('priority', event.target.value)}><option>Alta</option><option>Media</option><option>Baixa</option></select></label>
               {canManageAll && (
                 <label>Responsavel<select value={defaultAssignedId} onChange={(event) => updateForm('assignedId', event.target.value)}>{assignableProfiles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
               )}
+            </div>
+            <div className="taskFormGrid recurrenceGrid">
+              <label>Repetir<select value={form.recurrenceRule} onChange={(event) => updateForm('recurrenceRule', event.target.value)}><option value="none">Nao repetir</option><option value="daily">Diariamente</option><option value="weekly">Semanalmente</option><option value="monthly">Mensalmente</option></select></label>
+              {form.recurrenceRule !== 'none' && <label>Ate quando<input type="date" value={form.recurrenceUntil} onChange={(event) => updateForm('recurrenceUntil', event.target.value)} /></label>}
+              {form.recurrenceRule !== 'none' && <p className="recurrenceHint">Se nao informar uma data final, o sistema cria as proximas ocorrencias por ate 90 dias.</p>}
             </div>
             <fieldset className="participantPicker">
               <legend>Convidados</legend>
@@ -964,6 +969,7 @@ function TaskCard({ task, canComplete, canReviewExtension, onComplete, onUpdateS
         <span>Status: {task.status}</span>
         {task.participants?.length > 0 && <span>Convidados: {task.participants.length}</span>}
         {task.comments && <span>Comentario registrado</span>}
+        {task.recurrenceRule && task.recurrenceRule !== 'none' && <span>Recorrente</span>}
         {task.extensionStatus && <span>Prorrogacao solicitada</span>}
       </div>
 
